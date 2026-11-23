@@ -153,7 +153,12 @@ func (f *Folder) full(name string) (string, error) {
 			return "", fmt.Errorf("%w: %s goes through a link", ErrBadName, name)
 		}
 	}
-	return filepath.Join(f.root, filepath.FromSlash(name)), nil
+	p = filepath.Join(f.root, filepath.FromSlash(name))
+	// ValidName has refused every way out already; this is the same thing said again where the path is made: it lies inside the folder
+	if rel, err := filepath.Rel(f.root, p); err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("%w: %s is outside the folder", ErrBadName, name)
+	}
+	return p, nil
 }
 
 func (f *Folder) stage(s string) error {

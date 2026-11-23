@@ -490,7 +490,12 @@
   // a download link opened before signing in comes back here as /?next=/api/files/download?...: after the sign-in, go on to it
   function followNext() {
     const n = new URLSearchParams(location.search).get("next") || "";
-    if (SITE === "files" && /^\/api\/files\/(download|zip)\?/.test(n)) { history.replaceState(null, "", location.pathname); location.assign(n); return true; }
+    if (SITE === "files" && /^\/api\/files\/(download|zip)\?/.test(n)) {
+      // only ever this site's own download route: the address is rebuilt from its parts and its origin checked, whatever the text was
+      let u; try { u = new URL(n, location.origin); } catch (_) { return false; }
+      if (u.origin !== location.origin || !/^\/api\/files\/(download|zip)$/.test(u.pathname)) return false;
+      history.replaceState(null, "", location.pathname); location.assign(u.pathname + u.search); return true;
+    }
     return false;
   }
   function showShell() {

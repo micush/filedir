@@ -1,11 +1,13 @@
 # Changelog
 
-## [45] - 2026-11-23 — Deleted while it is being replicated: stop and delete; Cancel for uploads
+## [46] - 2026-11-23 — Deleted while it is being replicated: stop and delete; Cancel for uploads
 
 ### Changed
 - **An item that is deleted while it is being replicated is dropped, not finished.** A sync takes as long as the folder is big, and a deletion made meanwhile used to wait for the next sync while the pull carried on, or came back on the node. Now a deletion made on this node (the Files page, MCP `files_delete`, WebDAV) and one that the peer announces during the sync (it is asked every 2 seconds) dooms the item, or the whole folder: the downloads under it stop at the next block, their temporary files are removed, the items under it that were not started are skipped, and the deletion is applied before the sync ends, so what had already arrived goes to the trash with it. The last step of a pull, the swap into place, is one step with respect to a delete, so a file is not put back into a folder that is being removed. The sync does not report an error for this.
 
 - **A big deletion is applied much faster.** A folder deleted on another node arrives as one deletion for each file in it, and each used to be written to the index with a sync of its own, one after another: tens of thousands of syncs, which took minutes while the node showed *behind*. The deletions are now written a few hundred at a time, one sync for each, and the position in the peer's index is kept only after the last of them is in. A node that stops half way has taken files off the disk without recording it, and the next scan records the deletion, as for a file a person removed. How much faster it is was not measured on a cluster.
+
+- **Two hardenings for the code scanner's findings.** A download link opened before signing in is rebuilt from its parts and its origin checked before the page goes on to it (it was already limited to `/api/files/download` and `/zip`), and the path of a name in a folder is checked again to lie inside the folder where it is made (`ValidName` already refused every way out). The other findings are left as they are, for reasons that are in the answer to the scan, not in the code: a fetch from a web address that is refused at connection time for private addresses, certificate checks that an administrator turns off or that are made by hand, and a key path an administrator sets.
 
 ### Added
 - **Cancel** in the Files page footer while files are uploading: the files going up stop and the rest is not started; it says how many went up. Pieces of a big file that had gone up stay on the node until it clears them; nothing of it appears in the folder.
