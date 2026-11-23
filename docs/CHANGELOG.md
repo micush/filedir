@@ -1,5 +1,10 @@
 # Changelog
 
+## [48] - 2026-11-23 — The same check for the trash's own names
+
+### Changed
+- The name of a trash folder (`when`) and the names inside it are checked with `filepath.IsLocal` where the trash listing, a restore and a removal make paths from them, and a restore no longer ignores the error of working out where a file goes back to. Nothing that was allowed is refused.
+
 ## [47] - 2026-11-23 — The name is checked where a path is made from it
 
 ### Changed

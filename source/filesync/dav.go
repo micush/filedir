@@ -134,6 +134,9 @@ func trashTime(when string) int64 {
 // TrashEntries lists the trash one level at a time.  With no when it is the top of every trash folder, the newest first (what was
 // deleted, as it was named in the folder); with a when and a dir it is what is inside that folder of the trash.  At most limit.
 func (f *Folder) TrashEntries(when, dir string, limit int) (out []TrashEntry, total int, err error) {
+	if (when != "" && !filepath.IsLocal(when)) || (dir != "" && !filepath.IsLocal(dir)) {
+		return nil, 0, ErrBadName
+	}
 	td := filepath.Join(f.root, MetaDir, "trash")
 	one := func(w, rel string) {
 		ents, _ := os.ReadDir(filepath.Join(td, w, filepath.FromSlash(rel)))
@@ -188,7 +191,7 @@ func (f *Folder) TrashEntries(when, dir string, limit int) (out []TrashEntry, to
 
 // trashPath is the place in the trash of a name under a when, checked to be inside it.
 func (f *Folder) trashPath(when, name string) (string, error) {
-	if when == "" || strings.ContainsAny(when, "/\\") || when == "." || when == ".." {
+	if when == "" || strings.ContainsAny(when, "/\\") || when == "." || when == ".." || !filepath.IsLocal(when) {
 		return "", ErrBadName
 	}
 	if name != "" && !filepath.IsLocal(name) {
@@ -238,6 +241,9 @@ func (f *Folder) RestoreTrash(when, name string) (int, error) {
 }
 
 func (f *Folder) restoreOne(when, name string) error {
+	if !filepath.IsLocal(when) || !filepath.IsLocal(name) {
+		return ErrBadName
+	}
 	src := filepath.Join(f.root, MetaDir, "trash", when, filepath.FromSlash(name))
 	dstName := name
 	for i := 1; ; i++ {
@@ -256,7 +262,10 @@ func (f *Folder) restoreOne(when, name string) error {
 			dstName = fmt.Sprintf("%s restored %d%s", stem, i, ext)
 		}
 	}
-	dst, _ := f.resolve(dstName)
+	dst, err := f.resolve(dstName)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
