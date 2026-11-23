@@ -1,5 +1,13 @@
 # Changelog
 
+## [41] - 2026-11-23 — A page icon of its own
+
+### Changed
+- **The page icon (the one on the tab and the bookmark) is now a teal folder**, on the admin page and on the files page, so the six products can be told apart in a list of bookmarks. Until now filedir wore the same blue D as dnsdir. The other products got their own at the same time: dnsdir keeps the blue D, logdir is a green L, flowdir an orange F, netdir a purple N and ntpdir a red clock.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, `go build` for linux amd64, arm64, arm, 386 and riscv64. The icon was looked at in headless Chromium only through the mock page.
+
 ## [40] - 2026-11-23 — README with pictures; Monitor columns
 
 ### Added
