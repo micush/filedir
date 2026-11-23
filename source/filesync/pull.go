@@ -317,8 +317,27 @@ func (f *Folder) displace(p string, st os.FileInfo, l *FileInfo, conflict bool) 
 	return f.toTrash(p, l.Name)
 }
 
+// pullStamp is the trash folder a deletion that arrives from another node goes into.  A folder deleted elsewhere arrives one file after
+// another, over many seconds: each used to get the stamp of its own second, so one deletion showed up in the trash as dozens of entries of
+// the same name, each holding a slice of it.  While deletions keep arriving (a pause of less than a minute) they share the stamp of the first.
+func (f *Folder) pullStamp() string {
+	f.tmu.Lock()
+	defer f.tmu.Unlock()
+	now := f.now()
+	if f.tStamp == "" || now.Sub(f.tLast) > time.Minute || now.Before(f.tLast) {
+		f.tStamp = now.UTC().Format("20060102-150405")
+	}
+	f.tLast = now
+	return f.tStamp
+}
+
 func (f *Folder) toTrash(p, name string) error {
-	dst := filepath.Join(f.root, MetaDir, "trash", f.now().UTC().Format("20060102-150405"), filepath.FromSlash(name))
+	return f.toTrashAt(p, name, f.pullStamp())
+}
+
+// toTrashAt moves p into the trash folder when, as name.
+func (f *Folder) toTrashAt(p, name, when string) error {
+	dst := filepath.Join(f.root, MetaDir, "trash", when, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}

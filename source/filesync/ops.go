@@ -342,7 +342,7 @@ func (f *Folder) Delete(name string) error {
 		}
 		return err
 	}
-	if err := f.toTrash(p, name); err != nil {
+	if err := f.toTrashAt(p, name, f.now().UTC().Format("20060102-150405")); err != nil { // a deletion made here has its own stamp
 		return err
 	}
 	return f.tombstone(name)

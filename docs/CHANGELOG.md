@@ -1,5 +1,13 @@
 # Changelog
 
+## [44] - 2026-11-23 — One deletion, one entry in the trash
+
+### Fixed
+- **A folder deleted on another node showed up in the trash as dozens of entries of the same name.** A deletion reaches the other nodes file by file, over many seconds, and each file was put into the trash folder stamped with its own second, so the trash listed `projects` once per second, each holding a slice of it. Deletions that arrive from other nodes now share one trash folder while they keep coming (a pause of a minute starts a new one), so the folder is one entry, and restoring or removing it is one step. A deletion made on the node itself still has its own stamp. Entries already in a trash stay as they are.
+
+### Verified
+- A test deletes five files of one folder seven seconds apart through the pull path: one entry holding all five, and a new entry after a two-minute pause. The live two-node check was not made.
+
 ## [43] - 2026-11-23 — Make folders, copy, move, rename, delete and the trash over MCP
 
 ### Added

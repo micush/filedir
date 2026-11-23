@@ -50,6 +50,9 @@ type Folder struct {
 	hookMu sync.Mutex
 	flyMu  sync.Mutex
 	fly    map[string]*flight // the downloads under way here, by name: what has arrived of them is served to the others
+	tmu    sync.Mutex
+	tStamp string    // the trash folder that deletions arriving from other nodes go into (see pullStamp)
+	tLast  time.Time // when the last of them arrived
 }
 
 // Open opens a folder.  The folder must already hold its marker (MetaDir) unless Create is set: a folder that has lost it (an
