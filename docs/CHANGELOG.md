@@ -1,5 +1,10 @@
 # Changelog
 
+## [49] - 2026-11-23 — The trash's names are checked on their own, not inside a longer condition
+
+### Changed
+- The check of a trash folder's name and of the names inside it is now a test of its own in front of each use (the trash listing, a restore, a removal and the path of a trash entry), where before it was one part of a longer condition. The meaning is the same: a name that is not local is refused, as before.
+
 ## [48] - 2026-11-23 — The same check for the trash's own names
 
 ### Changed
