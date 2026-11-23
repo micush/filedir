@@ -380,6 +380,9 @@ func (f *Folder) toTrash(p, name string) error {
 
 // toTrashAt moves p into the trash folder when, as name.
 func (f *Folder) toTrashAt(p, name, when string) error {
+	if !filepath.IsLocal(name) || strings.ContainsAny(when, "/\\") {
+		return ErrBadName
+	}
 	dst := filepath.Join(f.root, MetaDir, "trash", when, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err

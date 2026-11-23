@@ -1,5 +1,13 @@
 # Changelog
 
+## [47] - 2026-11-23 — The name is checked where a path is made from it
+
+### Changed
+- The code scanner did not accept that a name is safe because `ValidName` said so, nor a check made on the finished path. The name itself is now checked with `filepath.IsLocal` at each place a path is made from one (the folder's paths, the trash, the trash listing), in front of the existing checks. A name that was refused before is refused now; nothing that was allowed is refused.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds. Whether the scanner now closes its findings is only known when it scans again.
+
 ## [46] - 2026-11-23 — Deleted while it is being replicated: stop and delete; Cancel for uploads
 
 ### Changed

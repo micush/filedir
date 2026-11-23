@@ -170,6 +170,9 @@ func (f *Folder) TrashEntries(when, dir string, limit int) (out []TrashEntry, to
 		}
 		return out, total, nil
 	}
+	if dir != "" && !filepath.IsLocal(dir) {
+		return nil, 0, ErrBadName
+	}
 	if _, err := f.trashPath(when, dir); err != nil {
 		return nil, 0, err
 	}
@@ -186,6 +189,9 @@ func (f *Folder) TrashEntries(when, dir string, limit int) (out []TrashEntry, to
 // trashPath is the place in the trash of a name under a when, checked to be inside it.
 func (f *Folder) trashPath(when, name string) (string, error) {
 	if when == "" || strings.ContainsAny(when, "/\\") || when == "." || when == ".." {
+		return "", ErrBadName
+	}
+	if name != "" && !filepath.IsLocal(name) {
 		return "", ErrBadName
 	}
 	base := filepath.Join(f.root, MetaDir, "trash", when)

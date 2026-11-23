@@ -29,6 +29,9 @@ func (f *Folder) resolve(name string) (string, error) {
 	if err := ValidName(name); err != nil {
 		return "", err
 	}
+	if !filepath.IsLocal(name) {
+		return "", fmt.Errorf("%w: %s is outside the folder", ErrBadName, name)
+	}
 	if f.ignored(name, false) || f.ignored(name, true) {
 		return "", fmt.Errorf("%w: %s is left out of the sync", ErrBadName, name)
 	}
@@ -310,6 +313,9 @@ func (f *Folder) recordWritten(name, p string, n int64, blocks []Block) {
 
 // toTrashCopy keeps the file that is about to be replaced.  A hard link is enough: the new file is a different one.
 func (f *Folder) toTrashCopy(p, name string) error {
+	if !filepath.IsLocal(name) {
+		return ErrBadName
+	}
 	dst := filepath.Join(f.root, MetaDir, "trash", f.now().UTC().Format("20060102-150405"), filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
