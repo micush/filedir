@@ -370,6 +370,12 @@ func (w *WebServer) Handler() http.Handler {
 	mux.Handle("GET /help.js", static)
 	mux.HandleFunc("GET /metrics", w.handleMetrics)
 	mux.HandleFunc("/mcp", w.handleMCP) // the address decides (settings.mcp_acl); on a gateway address the MCP listener serves it (mcplisten.go), here only on the node's own
+	// The links files_download_url and files_upload_url make carry their own signature and need no session; the MCP call that made one
+	// may have come to this address, so it serves them as the files site does.
+	mux.HandleFunc("GET /dl/{token}", w.handlePublicDownload)
+	mux.HandleFunc("GET /dl/{token}/{name}", w.handlePublicDownload)
+	mux.HandleFunc("PUT /up/{token}/{name}", w.handleLinkUpload)
+	mux.HandleFunc("POST /up/{token}/{name}", w.handleLinkUpload)
 	mux.HandleFunc("GET /api/metrics/dashboard.json", w.authed(w.handleMetricsFile("grafana-dashboard.json", "application/json", "filedir-grafana-dashboard.json")))
 	mux.HandleFunc("GET /api/metrics/alerts.yml", w.authed(w.handleMetricsFile("prometheus-alerts.yml", "application/yaml", "filedir-prometheus-alerts.yml")))
 	mux.Handle("GET /style.css", static)

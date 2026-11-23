@@ -37,7 +37,7 @@ Properties gives a file and a folder the same facts. For a folder, the size is e
 
 **The files site.** People who only need their files get the Files page and nothing else, on the gateways' addresses (the VIPs and anycast addresses) at port 443, with a sign-in of its own. They never see a cluster setting. Sessions are shared between nodes, so being sent to a different node doesn't sign anyone out. Two public-link features live here too. **Copy public link…** makes a link that downloads one file with no sign-in, for 1 to 30 days. It is signed with a key derived from the cluster secret, so every node accepts it, and it can't be withdrawn before it expires. **Upload from URL…** has the node fetch an http or https address into the folder in the background, and the footer shows how far it has got, with a Cancel button. Its own address and link-local addresses are refused.
 
-**MCP.** An assistant can call `files_status`, `files_list`, `files_read`, `list_nodes` and `get_topology`. Read-write keys can also call `files_write` to upload. Nothing else can be changed through MCP.
+**MCP.** An assistant can call `files_status`, `files_list`, `files_read`, `files_download_url`, `list_nodes` and `get_topology`. Read-write keys can also call `files_write` and `files_upload_url` to upload. Nothing else can be changed through MCP.
 
 **Monitoring.** Monitor ▸ Files lists every folder on every node, and shows how each node stands with each other node and which large files are being copied right now.
 
@@ -75,7 +75,7 @@ Several nodes can share a gateway VIP (see below), and you can manage the whole 
 | File sync | version vectors, block hashes, swarm fetch (partly downloaded files are shared too), conflict copies, trash, tombstones |
 | File manager | the Files page: tree, multi-select, drag-and-drop upload, zip download, edit, rename, copy, delete, properties |
 | Files site | the Files page alone, on the gateway addresses at port 443, for end users, with shared sessions |
-| MCP | `files_status`, `files_list`, `files_read`, `list_nodes`, `get_topology`, and `files_write` for read-write keys |
+| MCP | `files_status`, `files_list`, `files_read`, `files_download_url`, `list_nodes`, `get_topology`, and `files_write` and `files_upload_url` for read-write keys |
 | Web GUI | Files (the default page), Topology, Monitor (including Files), Configure (including Folders) |
 | Not yet | rarest-first block ordering (blocks are taken in random order while a file is shared) |
 
@@ -135,10 +135,14 @@ The endpoint speaks MCP over streamable HTTP with JSON answers (protocol version
 | `files_status` | each folder on every node: state, files, bytes, what is queued, peers and errors |
 | `files_list` | the files and folders in a folder path, with size, time and version |
 | `files_read` | download a file (text, or base64 in parts of up to 512 KB) |
+| `files_download_url` | a short-lived link that downloads one file with a plain HTTP GET (`curl -o file URL`), for files too big to pass through the conversation |
 | `files_write` | upload a file (read-write keys only; one call up to about 700 KB, larger files in parts) |
+| `files_upload_url` | a short-lived link that uploads one file with a plain HTTP PUT (`curl -T file URL`), read-write keys only |
 | `list_nodes`, `get_topology` | the cluster: the nodes (reachable, paused, primary, version, update state) and the gateways with their active node and anycast addresses |
 
-An MCP caller can list files and read the state of the cluster, and with a read-write key upload a file. It can't delete or rename anything. There's no tool for filedir's own configuration, the GUI's API, alerts, the scheduler, updates, the host's load, LLDP, the daemon log, users, backups or cluster tokens. No tool takes a `node` either: the node that serves the endpoint answers, and a `node` argument is refused. An administrator reads those things in the GUI or the CLI.
+An MCP caller can list files and read the state of the cluster, and with a read-write key upload a file.
+
+**Moving big files.** `files_read` and `files_write` carry a file as text in the conversation, which is fine for a config file and hopeless for an archive: a 2 MB file is about 3 MB of base64 that the assistant would have to type out. For anything big the assistant asks for a link instead, with `files_download_url` or `files_upload_url`, and runs `curl` on it from a machine that can reach the gateway address (an assistant with a shell on your computer, or Claude Code). The bytes go straight over HTTPS and never pass through the conversation. A link names one file, stops working after the minutes asked for (15 by default, 1440 at most), and needs no key, so treat an upload link like a password until it expires. It can be used again until then; each use replaces that one file, and the old one goes to the folder's trash. Every node accepts a link, whichever the gateway address reaches (during a rolling upgrade an upload link can be refused by a node that still runs an older version: ask again). Links are logged when they are made and when they are used. The link's host is the address the MCP call came to; the privacy levels apply to the answer like any other, so if a level hides that address, put the gateway address back in by hand. An assistant that cannot reach the gateway from its own shell, as with a chat in a browser, cannot use them, and falls back to the base64 parts. It can't delete or rename anything. There's no tool for filedir's own configuration, the GUI's API, alerts, the scheduler, updates, the host's load, LLDP, the daemon log, users, backups or cluster tokens. No tool takes a `node` either: the node that serves the endpoint answers, and a `node` argument is refused. An administrator reads those things in the GUI or the CLI.
 
 ## Security
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [42] - 2026-11-23 — Upload and download big files over MCP
+
+### Added
+- **`files_download_url` and `files_upload_url`**: two MCP tools that hand the assistant a short-lived link, so a big file is moved with plain HTTP (`curl -o file URL`, `curl -T file URL`) and never has to pass through the conversation as base64 text. Until now an upload over MCP meant typing the whole file out in parts of 700 KB, which is not workable past a few hundred KB (a 2.4 MB file is 3.3 MB of base64).
+- A link names one file and a folder, is signed with a key made from the cluster secret, so any node accepts it, and stops working after the minutes asked for (15 by default, 1440 at most). A download link is the same kind as the public link on the Files page. An upload link has a key of its own, takes a PUT or a POST, makes the folders on the way and replaces a file that is there (the old one goes to the trash), as `files_write` does; only read-write callers can ask for one. A download link cannot write and an upload link cannot read.
+- The links are served on the gateway addresses (next to `/mcp` and the files site) and on a node's own management port.
+
+### Verified
+- A new test makes both links through the MCP endpoint, uploads 3 MB by PUT, replaces the file by POST, downloads it, and checks that the links of the other kind, a changed token, an expired link and a link to a file that is not there are all refused and leave the file alone, and that a read-only key gets no upload link.
+
+### Not verified
+- Use from a real assistant on a real gateway. A link can only be used by something that can reach the gateway address: a chat in a browser, whose tools run in someone else's network, cannot, and still has the base64 parts. During a rolling upgrade, an upload link that reaches a node still on 41 is refused.
+
 ## [41] - 2026-11-23 — A page icon of its own
 
 ### Changed

@@ -48,7 +48,7 @@ Install a certificate the client trusts (`filedir --tls-install --cert-file F --
 claude mcp add --transport http filedir https://VIP/mcp
 ```
 
-Ask it to `files_status` to see whether every node holds every folder, or to `files_list` a folder, `files_read` a file, or (with a read-write key) `files_write` one.
+Ask it to `files_status` to see whether every node holds every folder, or to `files_list` a folder, `files_read` a file, or (with a read-write key) `files_write` one. For a big file ask for `files_download_url` or `files_upload_url` and use the link with `curl`.
 
 ## 5. More nodes
 

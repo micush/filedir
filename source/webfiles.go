@@ -110,6 +110,8 @@ func (w *WebServer) filesSiteHandler() http.Handler {
 	mux.Handle("POST /api/files/fetch/cancel", authed(w.handleFilesFetchCancel))
 	mux.Handle("GET /dl/{token}", on(http.HandlerFunc(w.handlePublicDownload)))
 	mux.Handle("GET /dl/{token}/{name}", on(http.HandlerFunc(w.handlePublicDownload)))
+	mux.Handle("PUT /up/{token}/{name}", on(http.HandlerFunc(w.handleLinkUpload)))
+	mux.Handle("POST /up/{token}/{name}", on(http.HandlerFunc(w.handleLinkUpload)))
 	mux.Handle("/dav/", on(http.HandlerFunc(w.handleDAV)))
 	mux.Handle("/dav", on(http.RedirectHandler("/dav/", http.StatusPermanentRedirect)))
 	mux.Handle("POST /api/files/copy", authed(w.handleFilesCopy))
