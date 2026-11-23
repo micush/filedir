@@ -1,5 +1,10 @@
 # Changelog
 
+## [50] - 2026-11-23 — The upload footer says only how many, and Cancel
+
+### Changed
+- While files upload, the Files page footer says only "Uploading N of M…" and the Cancel button. It used to add a line for each big file going up (its path, how much was sent, "connection lost, trying again in 8 s"), which could be so long that it pushed Cancel off the screen, and then went away again. Those lines are gone. A failed upload still says which file and why when it ends.
+
 ## [49] - 2026-11-23 — The trash's names are checked on their own, not inside a longer condition
 
 ### Changed

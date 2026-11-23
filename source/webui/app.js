@@ -4595,7 +4595,7 @@
       const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
       const cancel = () => { cancelled = true; ctl.abort(); progress = "Cancelling…"; drawFoot(); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      const tell = () => { if (cancelled) return; progress = h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + [...live.values()].map((v) => " — " + v).join("") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
+      const tell = () => { if (cancelled) return; progress = h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
         if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
