@@ -1,5 +1,20 @@
 # Changelog
 
+## [43] - 2026-11-23 — Make folders, copy, move, rename, delete and the trash over MCP
+
+### Added
+- **`files_mkdir`, `files_copy`, `files_move` and `files_delete`**, MCP tools for read-write keys, so an assistant can do with the files of the synced folders what the Files page does (together with `files_list`, `files_read`, `files_write`, and the links of 42 for big files). `files_move` is also the rename. A copy or a move can go into another synced folder (`to_folder`), the folder it goes into must exist (`files_mkdir` makes it), and a name that is taken is refused unless `unique` is true. A delete, and a file that a copy or a move replaces, goes to the folder's trash on the node that took the call, as on the Files page: nothing is removed for good. A read-only key is refused all four.
+- **`files_trash`, `files_trash_restore` and `files_trash_empty`**: look at the trash of a synced folder, put something back, and empty it. Emptying removes what is in the trash for good and needs `confirm: true`, so a call that leaves it out is refused. Each node keeps its own trash (a delete goes to the node that took it), so these work on the node that answers; call again to reach another.
+
+### Changed
+- The README, the help and the MCP server's own instructions said that MCP could not delete or rename; they now say what it can. Settings, the cluster, gateways, schedules, users and certificates still cannot be changed over MCP.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, five linux builds. A new test makes a folder, copies (and the refusal of a taken name, and `unique`), moves, renames, moves a tree, refuses a move into itself, into a folder that is not there and of a file that is not there, deletes a tree and checks that nothing else went with it, and that a read-only key gets none of it.
+
+### Not verified
+- A live run on a real cluster, and what the other node shows after a delete (the same code as the Files page, but not looked at here).
+
 ## [42] - 2026-11-23 — Upload and download big files over MCP
 
 ### Added
