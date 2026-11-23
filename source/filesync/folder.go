@@ -35,9 +35,10 @@ type Config struct {
 	Peers func(name string, v Vector) []Source
 	// Swarm names the other nodes that may be pulling the same file right now, which can be asked which blocks of it they have: a big
 	// download is shared among them while it runs.  Their sources should also be Havers.
-	Swarm  func() []Source
-	Create bool // make Root and its marker if missing: for a folder that is new on this node
-	Now    func() time.Time
+	Swarm      func() []Source
+	Create     bool // make Root and its marker if missing: for a folder that is new on this node
+	Now        func() time.Time
+	WatchEvery time.Duration // how often a running sync asks the peer what it has deleted (default 2 s; tests make it short)
 }
 
 // Folder is one synced folder on this node.
@@ -50,6 +51,8 @@ type Folder struct {
 	hookMu sync.Mutex
 	flyMu  sync.Mutex
 	fly    map[string]*flight // the downloads under way here, by name: what has arrived of them is served to the others
+	dm     dooms              // what was deleted while a sync was running (doom.go)
+	pq     pendingPuts
 	tmu    sync.Mutex
 	tStamp string    // the trash folder that deletions arriving from other nodes go into (see pullStamp)
 	tLast  time.Time // when the last of them arrived

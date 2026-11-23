@@ -65,6 +65,10 @@ func depth(name string) int { return strings.Count(name, "/") }
 func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 	f.op.Lock()
 	defer f.op.Unlock()
+	f.syncBegin()
+	defer f.syncEnd()
+	f.pq.begin()
+	defer f.pq.end()
 	if _, err := f.scan(); err != nil {
 		return 0, err
 	}
@@ -101,12 +105,25 @@ func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 	var failed error
 	var retry []FileInfo
 	var mu sync.Mutex // guards n, failed, retry while files are pulled side by side
+	// what the peer deletes while this runs: the pulls under it stop, and the deletions are applied before the end (doom.go)
+	var late []FileInfo
+	stopWatch := make(chan struct{})
+	var ww sync.WaitGroup
+	if len(list) > 0 {
+		ww.Add(1)
+		go func() {
+			defer ww.Done()
+			f.watchDeletes(src, max, f.watchEvery(), stopWatch, func(d []FileInfo) { mu.Lock(); late = append(late, d...); mu.Unlock() })
+		}()
+	}
 	record := func(fi FileInfo, ch bool, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch {
 		case errors.Is(err, errNotEmpty):
 			retry = append(retry, fi)
+		case errors.Is(err, errDoomed):
+			// deleted while it was being replicated: nothing to report, the deletion is applied below
 		case err != nil:
 			if failed == nil {
 				failed = fmt.Errorf("%s: %w", fi.Name, err)
@@ -136,6 +153,26 @@ func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 		record(fi, ch, err)
 	}
 	wg.Wait()
+	close(stopWatch)
+	ww.Wait()
+	// the deletions that came while the pulls were under way, deepest first: what had come of the items is removed with them
+	mu.Lock()
+	dels := late
+	mu.Unlock()
+	sort.SliceStable(dels, func(i, j int) bool { return depth(dels[i].Name) > depth(dels[j].Name) })
+	for _, fi := range dels {
+		ch, err := f.handle(fi, src)
+		switch {
+		case errors.Is(err, errNotEmpty):
+			retry = append(retry, fi)
+		case err != nil:
+			if failed == nil {
+				failed = fmt.Errorf("%s: %w", fi.Name, err)
+			}
+		case ch:
+			n++
+		}
+	}
 	for _, fi := range retry {
 		ch, err := f.handle(fi, src)
 		switch {
@@ -151,6 +188,9 @@ func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 		case ch:
 			n++
 		}
+	}
+	if err := f.flushPuts(); err != nil && failed == nil { // the position is kept only when every entry is in the index
+		failed = err
 	}
 	if failed != nil {
 		return n, failed
@@ -175,6 +215,9 @@ func (f *Folder) keepDir(del FileInfo) error {
 // handle decides what one entry from a peer means here, and does it.  An entry that is not well formed is dropped for good.
 func (f *Folder) handle(fi FileInfo, src Source) (bool, error) {
 	if err := fi.Check(f.cfg.MaxFileSize); err != nil {
+		return false, nil
+	}
+	if !fi.Deleted && f.doomed(fi) { // deleted since the list was taken: not started
 		return false, nil
 	}
 	if f.ignored(fi.Name, fi.Kind == KDir) {
@@ -232,7 +275,7 @@ func (f *Folder) apply(fi, l FileInfo, conflict bool, src Source) (bool, error) 
 				return false, err
 			}
 		}
-		return true, f.ix.put(fi)
+		return true, f.putDeleted(fi)
 	case fi.Kind == KDir:
 		if st, err := os.Lstat(p); err == nil && !st.IsDir() {
 			if err := f.displace(p, st, &l, conflict); err != nil {
@@ -443,17 +486,28 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 	if err := f.checkLocal(p, &l); err != nil {
 		return false, err
 	}
+	// deleted while it was coming: the temporary file is dropped.  The check and the swap are one step with respect to Delete, so a file
+	// is never put back into a folder that is being removed.
+	f.dm.mu.Lock()
+	if f.doomedLocked(fi) {
+		f.dm.mu.Unlock()
+		return false, errDoomed
+	}
 	if st, err := os.Lstat(p); err == nil {
 		if err := f.displace(p, st, &l, conflict); err != nil {
+			f.dm.mu.Unlock()
 			return false, err
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		f.dm.mu.Unlock()
 		return false, err
 	}
 	if err := os.Rename(tmp, p); err != nil {
+		f.dm.mu.Unlock()
 		return false, err
 	}
+	f.dm.mu.Unlock()
 	done = true
 	syncDirShared(filepath.Dir(p))
 	if err := f.stage("after-swap"); err != nil {

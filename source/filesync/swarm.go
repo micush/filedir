@@ -267,6 +267,9 @@ func (f *Folder) fetch(tf *os.File, fi FileInfo, want []Block, first Source, fl 
 			mu.Lock()
 			defer mu.Unlock()
 			for {
+				if failed == nil && f.doomed(fi) { // deleted while it was coming: stop
+					failed = errDoomed
+				}
 				if failed != nil || (len(todo) == 0 && running == 0) {
 					cond.Broadcast()
 					return

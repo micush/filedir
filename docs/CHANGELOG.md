@@ -1,5 +1,18 @@
 # Changelog
 
+## [45] - 2026-11-23 — Deleted while it is being replicated: stop and delete; Cancel for uploads
+
+### Changed
+- **An item that is deleted while it is being replicated is dropped, not finished.** A sync takes as long as the folder is big, and a deletion made meanwhile used to wait for the next sync while the pull carried on, or came back on the node. Now a deletion made on this node (the Files page, MCP `files_delete`, WebDAV) and one that the peer announces during the sync (it is asked every 2 seconds) dooms the item, or the whole folder: the downloads under it stop at the next block, their temporary files are removed, the items under it that were not started are skipped, and the deletion is applied before the sync ends, so what had already arrived goes to the trash with it. The last step of a pull, the swap into place, is one step with respect to a delete, so a file is not put back into a folder that is being removed. The sync does not report an error for this.
+
+- **A big deletion is applied much faster.** A folder deleted on another node arrives as one deletion for each file in it, and each used to be written to the index with a sync of its own, one after another: tens of thousands of syncs, which took minutes while the node showed *behind*. The deletions are now written a few hundred at a time, one sync for each, and the position in the peer's index is kept only after the last of them is in. A node that stops half way has taken files off the disk without recording it, and the next scan records the deletion, as for a file a person removed. How much faster it is was not measured on a cluster.
+
+### Added
+- **Cancel** in the Files page footer while files are uploading: the files going up stop and the rest is not started; it says how many went up. Pieces of a big file that had gone up stay on the node until it clears them; nothing of it appears in the folder.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds, `node --check`. Two new tests (a peer deletes a folder while it is pulled; the folder is deleted on this node while it is pulled) fail when the doom is switched off; a third has 700 files deleted on one node and applied on the other in batches. The live two-node check, and the Cancel button in a browser, were not made.
+
 ## [44] - 2026-11-23 — One deletion, one entry in the trash
 
 ### Fixed

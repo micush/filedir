@@ -241,11 +241,11 @@
   }
 
   // Upload raw bytes (release archive); the CSRF token still applies.
-  async function apiUpload(path, file) {
+  async function apiUpload(path, file, signal) {
     const res = await fetch(route(path), {
       method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.session.csrf },
-      body: file,
+      body: file, signal,
     });
     let data = null;
     try { data = await res.json(); } catch (_) { /* non-JSON error */ }
@@ -259,7 +259,7 @@
   const UPLOAD_PIECE = 8 << 20, UPLOAD_RESUME_MIN = 4 << 20;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const transient = (e) => e.message !== "unauthenticated" && (!e.status || (e.status >= 500 && e.status !== 507 && e.status !== 501) || e.status === 408 || e.status === 429);   // no status: the network; a full disk is not going to pass
-  async function apiUploadResumable(fo, path, file, onProgress, onWait) {
+  async function apiUploadResumable(fo, path, file, onProgress, onWait, signal) {
     let id = null, off = 0, tries = 0;
     for (;;) {
       try {
@@ -267,7 +267,7 @@
         while (off < file.size) {
           const res = await fetch(route("/api/files/upload/chunk?id=" + id + "&offset=" + off), {
             method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.session.csrf },
-            body: file.slice(off, Math.min(off + UPLOAD_PIECE, file.size)),
+            body: file.slice(off, Math.min(off + UPLOAD_PIECE, file.size)), signal,
           });
           let data = null;
           try { data = await res.json(); } catch (_) { /* not JSON */ }
@@ -284,19 +284,22 @@
           throw e;
         }
       } catch (e) {
+        if (signal && signal.aborted) throw e;   // cancelled: no second try
         if (!transient(e) || ++tries > 45) throw e;
         const wait = Math.min(1000 * 2 ** (tries - 1), 15000);
         onWait(wait, e);
         await sleep(wait);
+        if (signal && signal.aborted) throw e;
         if (id) id = null;   // asked again below how much is there
       }
     }
   }
   // a small file: the whole of it again when the connection drops
-  async function apiUploadRetry(path, file, onWait) {
+  async function apiUploadRetry(path, file, onWait, signal) {
     for (let tries = 1; ; tries++) {
-      try { return await apiUpload(path, file); }
+      try { return await apiUpload(path, file, signal); }
       catch (e) {
+        if (signal && signal.aborted) throw e;   // cancelled: no second try
         if (!(e instanceof TypeError) && !(e.status >= 500 && e.status !== 507 && e.status !== 501)) throw e;
         if (tries >= 5) throw e;
         const wait = Math.min(1000 * 2 ** (tries - 1), 15000); onWait(wait, e); await sleep(wait);
@@ -4583,32 +4586,35 @@
     async function upload(items, base, fo = kept.folder) {
       if (!items.length) return;
       const total = items.length;
-      let done = 0, failed = null, next = 0;
+      let done = 0, failed = null, next = 0, cancelled = false;
+      const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
+      const cancel = () => { cancelled = true; ctl.abort(); progress = "Cancelling…"; drawFoot(); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      const tell = () => { progress = "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + [...live.values()].map((v) => " — " + v).join(""); drawFoot(); };
+      const tell = () => { if (cancelled) return; progress = h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + [...live.values()].map((v) => " — " + v).join("") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
-        if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }); live.delete(it); return; }
+        if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
         try {
           await apiUploadResumable(fo, p, file,
             (n, tot) => { live.set(it, it.path + ": " + size(n) + " of " + size(tot) + " (" + Math.floor((n * 100) / tot) + "%)"); tell(); },
-            (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); });
+            (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal);
         } finally { live.delete(it); }
       };
       tell();
       const worker = async () => {
-        while (!failed && next < items.length) {
+        while (!failed && !cancelled && next < items.length) {
           const it = items[next++];
           try {
             if (it.dir) await api("POST", "/api/files/mkdir", { folder: fo, path: join(base, it.path) });
             else await one(it);
             done++; tell();
-          } catch (e) { failed = { e, name: it.path }; }
+          } catch (e) { if (!cancelled) failed = { e, name: it.path }; }
         }
       };
       await Promise.all([worker(), worker(), worker()]);   // a few at a time: many small files are not left waiting for one big one
       progress = "";
-      if (failed) { if (failed.e.message !== "unauthenticated") { clear(status).append(h("div", { class: "notice bad", role: "alert" }, failed.name + ": " + failed.e.message)); } }
+      if (cancelled) { clear(status).append(h("div", { class: "notice", role: "status" }, "Upload cancelled: " + done.toLocaleString() + " of " + total.toLocaleString() + " were uploaded; the rest was not.")); }
+      else if (failed) { if (failed.e.message !== "unauthenticated") { clear(status).append(h("div", { class: "notice bad", role: "alert" }, failed.name + ": " + failed.e.message)); } }
       else clear(status);
       await load();
     }

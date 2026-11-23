@@ -342,6 +342,7 @@ func (f *Folder) Delete(name string) error {
 		}
 		return err
 	}
+	f.doom(name, doomEntry{any: true})                                                    // a sync that is pulling it stops, and what has come of it goes with it
 	if err := f.toTrashAt(p, name, f.now().UTC().Format("20060102-150405")); err != nil { // a deletion made here has its own stamp
 		return err
 	}
