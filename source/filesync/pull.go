@@ -340,6 +340,14 @@ func (f *Folder) displace(p string, st os.FileInfo, l *FileInfo, conflict bool) 
 	if st.IsDir() {
 		if err := os.Remove(p); err != nil {
 			if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST) {
+				// what the sync leaves out (the ignore patterns) is not in the index and is never deleted by a deletion that arrives: left
+				// alone it keeps the folder, and the folder then comes back on every node as an empty one.  A folder that holds nothing
+				// else goes, with what the sync leaves out, to the trash.
+				if f.onlyIgnored(p, l.Name) && f.sweepIgnored(p, l.Name) == nil {
+					if err := os.Remove(p); err == nil {
+						return nil
+					}
+				}
 				return errNotEmpty
 			}
 			return err
@@ -570,3 +578,50 @@ const maxWorkers = 64
 
 // filePar is how many files one SyncFrom pulls at once.
 const filePar = 12
+
+// onlyIgnored says whether everything under the folder p (named rel) is left out of the sync: files and folders that the ignore patterns
+// match, and folders that hold only such things.  A link, or a file the sync does not leave out, makes it false.
+func (f *Folder) onlyIgnored(p, rel string) bool {
+	ents, err := os.ReadDir(p)
+	if err != nil {
+		return false
+	}
+	for _, e := range ents {
+		n := rel + "/" + e.Name()
+		switch {
+		case e.Type()&os.ModeSymlink != 0:
+			return false
+		case e.IsDir():
+			if !f.ignored(n, true) && !f.onlyIgnored(filepath.Join(p, e.Name()), n) {
+				return false
+			}
+		case !f.ignored(n, false):
+			return false
+		}
+	}
+	return true
+}
+
+// sweepIgnored moves what onlyIgnored found into the trash, and removes the folders that are left empty.
+func (f *Folder) sweepIgnored(p, rel string) error {
+	ents, err := os.ReadDir(p)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		n, cp := rel+"/"+e.Name(), filepath.Join(p, e.Name())
+		if e.IsDir() && !f.ignored(n, true) {
+			if err := f.sweepIgnored(cp, n); err != nil {
+				return err
+			}
+			if err := os.Remove(cp); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := f.toTrash(cp, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}

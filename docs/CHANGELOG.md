@@ -1,5 +1,13 @@
 # Changelog
 
+## [51] - 2026-11-23 — A deleted folder that holds files the sync leaves out no longer comes back
+
+### Fixed
+- **A folder that was deleted came back as empty folders.** A node that receives a deletion removes the folder only when it is empty. Files that the sync leaves out (the folder's ignore patterns, such as `*.tmp`) are not in the index, so a deletion never took them away: the folder was "kept", its version moved past the deletion, and it was announced again, so the empty folders appeared on every node. A folder whose remaining content is only what the sync leaves out is now emptied (those files go to the trash) and removed. A file the sync does not leave out and that the other nodes do not know of still keeps its folder, as before. A new test reproduces the old behaviour (it fails without the change) and covers both cases.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds. Not checked on the cluster: that `*.tmp` files are what held the folders on your nodes (a `find /var/lib/filedir/folders/root/projects -type f` on filedir2 would show them).
+
 ## [50] - 2026-11-23 — The upload footer says only how many, and Cancel
 
 ### Changed

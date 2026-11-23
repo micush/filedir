@@ -126,3 +126,105 @@ func TestBigDeletionIsApplied(t *testing.T) {
 		t.Error("the deleted file came back")
 	}
 }
+
+// Upload a tree (with empty folders in it), let it replicate, delete it on one node, and let the nodes talk (scans and syncs both ways) for
+// a while: nothing of it may come back on either node.
+func TestDeletedTreeStaysDeleted(t *testing.T) {
+	a := newNode(t, "A")
+	b := newNode(t, "B")
+	for i := 0; i < 60; i++ {
+		a.write(t, fmt.Sprintf("proj/p%d/.git/objects/%02x/o%d", i%5, i%16, i), "obj")
+		a.write(t, fmt.Sprintf("proj/p%d/src/a/b/f%d.go", i%5, i), "code")
+	}
+	for i := 0; i < 5; i++ {
+		os.MkdirAll(a.path(fmt.Sprintf("proj/p%d/empty/deeper", i)), 0o755)
+		os.MkdirAll(a.path(fmt.Sprintf("proj/p%d/.git/refs/heads", i)), 0o755)
+	}
+	a.write(t, "keep.txt", "k")
+	a.scan(t)
+	b.sync(t, a)
+	a.sync(t, b)
+	b.scan(t)
+	if _, ok := b.read("proj/p1/src/a/b/f1.go"); !ok {
+		t.Fatal("not replicated")
+	}
+	if err := a.f.Delete("proj"); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 6; round++ {
+		a.scan(t)
+		b.scan(t)
+		b.sync(t, a)
+		a.sync(t, b)
+	}
+	noneUnder(t, a, "proj")
+	noneUnder(t, b, "proj")
+}
+
+// The same, deleted on the node that was synced to, with the other node scanning in between.
+func TestDeletedTreeStaysDeletedOtherWay(t *testing.T) {
+	a := newNode(t, "A")
+	b := newNode(t, "B")
+	for i := 0; i < 40; i++ {
+		a.write(t, fmt.Sprintf("proj/p%d/d%d/f%d", i%4, i%3, i), "x")
+	}
+	a.scan(t)
+	b.sync(t, a)
+	b.scan(t)
+	if err := b.f.Delete("proj"); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 6; round++ {
+		a.scan(t)
+		b.scan(t)
+		a.sync(t, b)
+		b.sync(t, a)
+	}
+	noneUnder(t, a, "proj")
+	noneUnder(t, b, "proj")
+}
+
+// A folder that holds files the sync leaves out (*.tmp) on the node that receives the deletion: the folder was kept, and came back on the
+// other node as empty folders.  What the sync leaves out goes to the trash with the folder.
+func TestDeletedTreeWithIgnoredFilesStaysDeleted(t *testing.T) {
+	ign := func(c *Config) { c.Ignore = []string{"*.tmp"} }
+	a := newNode(t, "A", ign)
+	b := newNode(t, "B", ign)
+	for i := 0; i < 30; i++ {
+		a.write(t, fmt.Sprintf("proj/p%d/src/f%d.go", i%3, i), "code")
+	}
+	a.write(t, "keep.txt", "k")
+	a.scan(t)
+	b.sync(t, a)
+	// the receiving node has left-out files in some of the folders, and one folder that is left out as a whole
+	b.write(t, "proj/p0/src/cache.tmp", "t")
+	b.write(t, "proj/p1/deep/er/x.tmp", "t")
+	os.MkdirAll(b.path("proj/p2/src/junk"), 0o755)
+	b.write(t, "proj/p2/src/junk/y.tmp", "t")
+	b.scan(t)
+	if err := a.f.Delete("proj"); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 6; round++ {
+		a.scan(t)
+		b.scan(t)
+		b.sync(t, a)
+		a.sync(t, b)
+	}
+	noneUnder(t, a, "proj")
+	noneUnder(t, b, "proj")
+	// a file the sync does not leave out, and that no other node knows of, still keeps its folder
+	a2 := newNode(t, "A2", ign)
+	b2 := newNode(t, "B2", ign)
+	a2.write(t, "d/one.txt", "1")
+	a2.scan(t)
+	b2.sync(t, a2)
+	b2.write(t, "d/new.txt", "mine")
+	if err := a2.f.Delete("d"); err != nil {
+		t.Fatal(err)
+	}
+	b2.sync(t, a2)
+	if got, ok := b2.read("d/new.txt"); !ok || got != "mine" {
+		t.Errorf("a file that was never synced was removed: %q %v", got, ok)
+	}
+}
