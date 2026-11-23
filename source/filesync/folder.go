@@ -87,6 +87,7 @@ func Open(cfg Config) (*Folder, error) {
 		return nil, err
 	}
 	f := &Folder{cfg: cfg, root: root, ix: ix}
+	sweepTrashGone(root)
 	os.RemoveAll(filepath.Join(root, MetaDir, "tmp")) // partial files from a crash: never used, always fetched again
 	return f, nil
 }

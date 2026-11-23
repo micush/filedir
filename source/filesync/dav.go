@@ -89,26 +89,41 @@ func (f *Folder) TrashSize() (bytes int64, files int) {
 	return
 }
 
-// EmptyTrash removes everything in the trash of this folder on this node, and says how many bytes and files that was.  The trash is not
-// shared: the other nodes keep their own until its time is up or they are asked.
+// EmptyTrash empties the trash of this folder on this node, and says how many bytes and files that was.  The trash is not shared: the
+// other nodes keep their own until its time is up or they are asked.  The trash is moved aside in one step, so it is empty (and the
+// folder free for the sync) at once; the files are removed afterwards in the background, which for a trash of tens of thousands of files
+// takes minutes.  What a restart interrupts is removed the next time the folder is opened.
 func (f *Folder) EmptyTrash() (bytes int64, files int, err error) {
-	f.op.Lock()
-	defer f.op.Unlock()
-	bytes, files = f.TrashSize()
 	td := filepath.Join(f.root, MetaDir, "trash")
-	ents, err := os.ReadDir(td)
+	f.op.Lock()
+	aside := filepath.Join(f.root, MetaDir, fmt.Sprintf("trash-gone-%d", time.Now().UnixNano()))
+	err = os.Rename(td, aside)
+	f.op.Unlock()
 	if err != nil {
 		if os.IsNotExist(err) {
 			return 0, 0, nil
 		}
 		return 0, 0, err
 	}
-	for _, e := range ents {
-		if err = os.RemoveAll(filepath.Join(td, e.Name())); err != nil {
-			return
+	filepath.WalkDir(aside, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files++
+			if st, err := d.Info(); err == nil {
+				bytes += st.Size()
+			}
 		}
-	}
+		return nil
+	})
+	go os.RemoveAll(aside)
 	return
+}
+
+// sweepTrashGone removes what an earlier EmptyTrash moved aside and did not finish removing.
+func sweepTrashGone(root string) {
+	ents, _ := filepath.Glob(filepath.Join(root, MetaDir, "trash-gone-*"))
+	for _, e := range ents {
+		go os.RemoveAll(e)
+	}
 }
 
 // TrashEntry is one thing in the trash, shown like a file in a folder: a file or a folder that was deleted (or replaced), the moment it

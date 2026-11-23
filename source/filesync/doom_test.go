@@ -228,3 +228,35 @@ func TestDeletedTreeWithIgnoredFilesStaysDeleted(t *testing.T) {
 		t.Errorf("a file that was never synced was removed: %q %v", got, ok)
 	}
 }
+
+// Emptying the trash must not wait for the files to be removed.
+func TestEmptyTrashReturnsAtOnce(t *testing.T) {
+	a := newNode(t, "A")
+	for i := 0; i < 200; i++ {
+		a.write(t, fmt.Sprintf("d/f%d.txt", i), "data")
+	}
+	a.scan(t)
+	if err := a.f.Delete("d"); err != nil {
+		t.Fatal(err)
+	}
+	if _, n := a.f.TrashSize(); n != 200 {
+		t.Fatalf("trash holds %d files, want 200", n)
+	}
+	b, n, err := a.f.EmptyTrash()
+	if err != nil || n != 200 || b != 200*4 {
+		t.Fatalf("EmptyTrash = %d bytes, %d files, %v", b, n, err)
+	}
+	if _, n := a.f.TrashSize(); n != 0 {
+		t.Errorf("trash still holds %d files", n)
+	}
+	// and it is usable again at once
+	a.write(t, "e.txt", "x")
+	a.scan(t)
+	a.f.Delete("e.txt")
+	if _, n := a.f.TrashSize(); n != 1 {
+		t.Errorf("new trash holds %d files, want 1", n)
+	}
+	if b, n, err := a.f.EmptyTrash(); err != nil || n != 1 || b != 1 {
+		t.Errorf("second EmptyTrash = %d, %d, %v", b, n, err)
+	}
+}

@@ -4436,8 +4436,12 @@
         err,
         h("div", { class: "toolbar" },
           opts.noCancel ? null : h("button", { type: "button", class: "btn", onclick: () => d.close() }, "Cancel"),
-          h("button", { type: "button", class: "btn" + (opts.danger ? " danger" : " primary"), onclick: async () => {
-            const msg = await onOk(input ? input.value.trim() : "");
+          h("button", { type: "button", class: "btn" + (opts.danger ? " danger" : " primary"), onclick: async (ev) => {
+            const b = ev.currentTarget, was = b.textContent;
+            if (b.disabled) return;
+            b.disabled = true; b.textContent = "Working…";   // a slow action must show that it is going on, and not be started twice
+            let msg;
+            try { msg = await onOk(input ? input.value.trim() : ""); } finally { b.disabled = false; b.textContent = was; }
             if (msg) { err.textContent = msg; err.classList.remove("hidden"); } else { d.close(); }
           } }, opts.ok || "OK")));
       d.addEventListener("close", () => d.remove());

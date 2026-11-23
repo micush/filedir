@@ -1,5 +1,13 @@
 # Changelog
 
+## [52] - 2026-11-23 — Emptying a large trash is immediate
+
+### Fixed
+- **"Empty trash" sat for 30 seconds with nothing happening** on a trash of 76,000 files. The node deleted every file while holding the folder's operation lock (so the sync waited too), and the dialog gave no sign that it was working. The trash is now moved aside in one step, so it is empty and the folder free at once, and the files are removed in the background; what a restart interrupts is removed when the folder is next opened. The button now shows "Working…" and cannot be pressed twice while any dialog action is running.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds, `node --check`. Not checked on the cluster. Counting the files for the "Freed …" message still takes a moment on a very large trash.
+
 ## [51] - 2026-11-23 — A deleted folder that holds files the sync leaves out no longer comes back
 
 ### Fixed
