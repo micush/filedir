@@ -1,5 +1,13 @@
 # Changelog
 
+## [53] - 2026-11-23 — The log says why a deleted folder is kept
+
+### Added
+- **A folder that is kept after another node deleted it is now logged**, with what is in it ("kept the folder … it holds file … (in the index, live / not in the index / left out of the sync)"), and so is a change here that beats the other node's deletion (with both versions). The first twelve of each sync are shown, then how many more. Folders that come back as empty folders after a deletion could until now only be explained by guessing: the logs of v50 to v52 do not say which of these two it is. Both the sync log and the troubleshooting bundle carry the new lines.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds. A new test reproduces a kept folder and checks that the log names what is in it. A new stress test (both nodes scanning and syncing in loops, a delete at random moments while the other node is still replicating) does not reproduce the returning folders, so this release does **not** claim to fix them; it makes the cause visible.
+
 ## [52] - 2026-11-23 — Emptying a large trash is immediate
 
 ### Fixed

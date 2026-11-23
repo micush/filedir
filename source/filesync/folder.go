@@ -20,16 +20,17 @@ type Source interface {
 
 // Config describes one folder on this node.
 type Config struct {
-	ID          string   // the folder's name, the same on every node
-	Root        string   // where it lives on this node
-	Node        NodeID   // this node
-	DBDir       string   // where the index is kept: outside Root
-	Ignore      []string // patterns (path.Match) for a name or a whole path; a trailing / matches directories only
-	IgnorePerms bool     // do not sync or apply permission bits
-	MaxFileSize int64    // larger files are neither scanned nor accepted (0: no limit)
-	MaxUsedPct  int      // no file is written or fetched that would take the disk past this percent full (0, 100: no limit)
-	TrashDays   int      // how long replaced and deleted files stay in the trash (0: 30)
-	TombDays    int      // how long a deletion is remembered (0: 180)
+	ID          string                           // the folder's name, the same on every node
+	Root        string                           // where it lives on this node
+	Node        NodeID                           // this node
+	DBDir       string                           // where the index is kept: outside Root
+	Ignore      []string                         // patterns (path.Match) for a name or a whole path; a trailing / matches directories only
+	IgnorePerms bool                             // do not sync or apply permission bits
+	Logf        func(format string, args ...any) // what the sync wants the log to say (optional)
+	MaxFileSize int64                            // larger files are neither scanned nor accepted (0: no limit)
+	MaxUsedPct  int                              // no file is written or fetched that would take the disk past this percent full (0, 100: no limit)
+	TrashDays   int                              // how long replaced and deleted files stay in the trash (0: 30)
+	TombDays    int                              // how long a deletion is remembered (0: 180)
 	// Peers names the other nodes known to hold a version of a file, so a pull can take blocks from all of them at once: the more nodes
 	// have a file, the faster it spreads.  Nil: only the peer that announced it.
 	Peers func(name string, v Vector) []Source
@@ -52,6 +53,7 @@ type Folder struct {
 	flyMu  sync.Mutex
 	fly    map[string]*flight // the downloads under way here, by name: what has arrived of them is served to the others
 	dm     dooms              // what was deleted while a sync was running (doom.go)
+	nt     notes
 	pq     pendingPuts
 	tmu    sync.Mutex
 	tStamp string    // the trash folder that deletions arriving from other nodes go into (see pullStamp)

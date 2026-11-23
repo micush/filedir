@@ -228,6 +228,7 @@ func (s *fdService) open(fc FolderCfg) (*fdFolder, error) {
 		Ignore: fc.Ignore, IgnorePerms: fc.IgnorePerms, MaxFileSize: int64(fc.MaxFileMB) << 20, MaxUsedPct: s.config().diskPct(), TrashDays: fc.TrashDays,
 		Create: true, Peers: func(name string, v filesync.Vector) []filesync.Source { return s.holders(fc.ID, name, v) },
 		Swarm: s.swarm,
+		Logf:  func(format string, args ...any) { warnf("files: "+fc.ID+": "+format, args...) },
 	}
 	f, err := filesync.Open(cfg)
 	if err != nil {

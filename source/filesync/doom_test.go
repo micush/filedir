@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -258,5 +259,94 @@ func TestEmptyTrashReturnsAtOnce(t *testing.T) {
 	}
 	if b, n, err := a.f.EmptyTrash(); err != nil || n != 1 || b != 1 {
 		t.Errorf("second EmptyTrash = %d, %d, %v", b, n, err)
+	}
+}
+
+// slow hands blocks out a little at a time, so that a sync is still going when the deletion comes.
+type slowSrc struct{ *local }
+
+func (s slowSrc) Block(folder, name string, off int64, size int, h Hash) ([]byte, error) {
+	time.Sleep(300 * time.Microsecond)
+	return s.local.Block(folder, name, off, size, h)
+}
+
+// What a cluster does: both nodes scan and sync from each other all the time, and a folder is deleted on one of them while the other has
+// not finished replicating it.  Nothing of it may come back.
+func TestDeleteDuringReplicationStaysDeleted(t *testing.T) {
+	for iter := 0; iter < 12; iter++ {
+		a := newNode(t, "A", func(c *Config) { c.WatchEvery = 10 * time.Millisecond })
+		b := newNode(t, "B", func(c *Config) { c.WatchEvery = 10 * time.Millisecond })
+		for i := 0; i < 400; i++ {
+			a.write(t, fmt.Sprintf("proj/r%d/.git/objects/%02x/o%d", i%4, i%64, i), fmt.Sprintf("obj %d", i))
+			a.write(t, fmt.Sprintf("proj/r%d/src/m%d/f%d.go", i%4, i%9, i), fmt.Sprintf("code %d", i))
+		}
+		a.write(t, "keep.txt", "k")
+		a.scan(t)
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		loop := func(me, other *testNode) {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				me.f.Scan()
+				me.f.SyncFrom(other.id, slowSrc{&local{f: other.f, fail: -1}})
+				time.Sleep(time.Millisecond)
+			}
+		}
+		wg.Add(2)
+		go loop(b, a)
+		go loop(a, b)
+		time.Sleep(time.Duration(5+iter*25) * time.Millisecond)
+		if err := a.f.Delete("proj"); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(1500 * time.Millisecond)
+		close(stop)
+		wg.Wait()
+		for round := 0; round < 4; round++ {
+			b.sync(t, a)
+			a.sync(t, b)
+		}
+		noneUnder(t, a, "proj")
+		noneUnder(t, b, "proj")
+		if t.Failed() {
+			t.Fatalf("iteration %d", iter)
+		}
+	}
+}
+
+// A folder that is kept because something is in it says so in the log, and says what.
+func TestKeptFolderIsLogged(t *testing.T) {
+	var mu sync.Mutex
+	var lines []string
+	logf := func(format string, args ...any) {
+		mu.Lock()
+		lines = append(lines, fmt.Sprintf(format, args...))
+		mu.Unlock()
+	}
+	a := newNode(t, "A")
+	b := newNode(t, "B", func(c *Config) { c.Logf = logf })
+	a.write(t, "d/e/one.txt", "1")
+	a.scan(t)
+	b.sync(t, a)
+	b.write(t, "d/e/mine.txt", "not known to anyone")
+	if err := a.f.Delete("d"); err != nil {
+		t.Fatal(err)
+	}
+	b.sync(t, a)
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "kept the folder d/e") && strings.Contains(l, "mine.txt (in the index, live)") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the log does not say why d/e was kept: %q", lines)
 	}
 }

@@ -189,6 +189,7 @@ func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 			n++
 		}
 	}
+	f.nt.flush(f.cfg.Logf)
 	if err := f.flushPuts(); err != nil && failed == nil { // the position is kept only when every entry is in the index
 		failed = err
 	}
@@ -202,6 +203,7 @@ func (f *Folder) SyncFrom(peer NodeID, src Source) (int, error) {
 // deletion, so the other nodes take it back.
 func (f *Folder) keepDir(del FileInfo) error {
 	l, _ := f.ix.get(del.Name)
+	f.nt.add("kept the folder "+del.Name+" (the peer deleted it; it is not empty here): "+f.describeDir(del.Name), f.cfg.Logf)
 	nf := FileInfo{Name: del.Name, Kind: KDir, Mode: 0o755, ModNs: f.now().UnixNano(), By: f.cfg.Node,
 		Version: del.Version.Merge(l.Version).Bump(f.cfg.Node)}
 	if p, err := f.full(del.Name); err == nil {
@@ -240,6 +242,7 @@ func (f *Folder) handle(fi FileInfo, src Source) (bool, error) {
 		l.Version = merged
 		return false, f.ix.put(l)
 	case fi.Deleted:
+		f.nt.add("kept "+l.Name+" (a change here beats the peer's deletion): here "+l.Version.String()+" by "+string(l.By)+", the deletion "+fi.Version.String()+" by "+string(fi.By), f.cfg.Logf)
 		return false, f.ix.put(l) // a change beats a deletion: this one stays; it is announced again, so the peer looks at it again
 	case l.Deleted:
 		fi.Version = merged.Bump(f.cfg.Node) // the winner's content under a version of its own: two nodes that settle two different pairs must not end up with the same vector
