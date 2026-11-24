@@ -1,5 +1,8 @@
 # Changelog
 
+## [95]
+- The Speed test card no longer goes away for a moment now and then. It showed only while the last status named two nodes, and a node that is busy (with the test itself, or an upload) can miss a status: the page then had one node, hid the card, and showed it again at the next status that had both. A node now stays in the card's lists for three minutes after the last status that named it.
+
 ## [94]
 - An upload of tens of thousands of files no longer starts a scan of the whole folder for every file. After each change made through the web page (an upload, a delete, a rename) the node asked for a scan, and the check that was meant to keep them from piling up was cleared before the scan began, so with a file every few milliseconds there were hundreds of scans waiting to run one after another, each walking all the files, on the same disk that was trying to write the uploads. Requests took a minute or more ("waiting for the node, 77 s") and the upload crawled. Now there is one scan at a time: the first one starts at once as before, and changes that come while it runs (or waits) are taken by one more scan, which starts after a pause of twice as long as the last scan took (at least a second), so scanning never takes more than a third of the time.
 

@@ -5364,8 +5364,12 @@
     // how fast the receiver hashes and writes, and all of it together as a replication does it.  The test is run on the receiver.
     let speed, speedCard, speedRes = null, speedBusy = false, speedFrom = null, speedTo = null, speedKey = "";
     const targetId = () => { const m = state.target ? state.nodes.find((n) => n.addr === state.target) : state.nodes.find((n) => n.self); return m ? m.node_id : null; };
+    // The nodes the card offers are the ones the last statuses named, and a node stays in the list for three minutes after the last one that
+    // named it: a node that is busy (with the test itself, or an upload) may miss a status, and the card was gone until it answered again.
+    const speedKnown = new Map();
+    const knownNodes = () => [...speedKnown.values()].sort((x, y) => (x.name || x.node).localeCompare(y.name || y.node, undefined, { numeric: true, sensitivity: "base" }));
     function drawSpeed() {
-      const nodes = shownNodes, ids = nodes.map((n) => n.node);
+      const nodes = knownNodes(), ids = nodes.map((n) => n.node);
       speedCard.hidden = nodes.length < 2 || !nodes.some((n) => n.folders.length);
       if (speedCard.hidden) return;
       const nameOf = (id) => { const n = nodes.find((x) => x.node === id); return n ? n.name || n.node : id || "this node"; };
@@ -5471,7 +5475,10 @@
       const nodeName = (x) => x.name || x.node;   // every card lists the nodes by name
       const nodes = (r.nodes || []).slice().sort((x, y) => nodeName(x).localeCompare(nodeName(y), undefined, { numeric: true, sensitivity: "base" }));
       shownNodes = nodes;
-      const key = nodes.map((n) => n.node + (n.name || "") + n.folders.length).join("|");
+      const now = Date.now();
+      for (const n of nodes) speedKnown.set(n.node, { node: n.node, name: n.name, folders: n.folders, seen: now });
+      for (const [k, v] of speedKnown) if (now - v.seen > 180000) speedKnown.delete(k);
+      const key = knownNodes().map((n) => n.node + (n.name || "") + n.folders.length).join("|");
       if (key !== speedKey) { speedKey = key; drawSpeed(); }   // not every poll: a menu that is open would close
       const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
