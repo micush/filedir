@@ -1,5 +1,9 @@
 # Changelog
 
+## [96]
+
+- Configure ▸ Folders: the folders table now runs the full width of the card, so its right edge lines up with the fields under it.
+
 ## [95]
 - The Speed test card no longer goes away for a moment now and then. It showed only while the last status named two nodes, and a node that is busy (with the test itself, or an upload) can miss a status: the page then had one node, hid the card, and showed it again at the next status that had both. A node now stays in the card's lists for three minutes after the last status that named it.
 
