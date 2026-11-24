@@ -4495,6 +4495,14 @@
     }
     function endRename() { renamingKey = null; drawn = ""; drawList(); const r = cursor >= 0 ? focusRow(cursor) : null; return r; }
     // a folder renamed in the tree: its name turns into a text box in its row, as in the list
+    let treeClick = { key: "", t: 0 }, treeTimer = 0;
+    function treeNameClick(fo, p) {   // a slow second click on the open folder's name renames it (a quick one is not a rename)
+      const k = tkey(fo, p), now = Date.now();
+      const slow = p && !ro() && !trash.on && fo === kept.folder && p === kept.path && treeClick.key === k && now - treeClick.t > 350 && now - treeClick.t < 2500;
+      treeClick = { key: k, t: now }; clearTimeout(treeTimer);
+      if (slow) treeTimer = setTimeout(() => treeRename(fo, p), 450);
+      go(fo, p);
+    }
     function treeRename(fo, p) {
       if (!p || ro()) return;
       treeRenaming = tkey(fo, p); treeDrawn = ""; drawTree();
@@ -5002,7 +5010,7 @@
         } },
         h("button", { type: "button", class: "tw" + ((sub && !sub.length) || leaf.has(k) ? " none" : ""), tabindex: "-1", "aria-hidden": "true", onclick: (ev) => { ev.stopPropagation(); toggle(fo, p); } }, isOpen ? "▾" : "▸"),
         treeRenaming === k ? h("span", { class: "tl" }, (here || within ? "📂 " : "📁 "), treeRenameInput(fo, p))
-          : h("span", { class: "tl", onclick: () => go(fo, p) }, (here || within ? "📂 " : "📁 ") + name));   // the folder that is open, and every folder above it, show an open folder
+          : h("span", { class: "tl", onclick: () => treeNameClick(fo, p), ondblclick: () => clearTimeout(treeTimer) }, (here || within ? "📂 " : "📁 ") + name));   // the folder that is open, and every folder above it, show an open folder
       row.style.paddingLeft = (0.3 + depth * 1.05) + "rem";
       out.push(row);
       if (isOpen && sub) for (const c of sub) { if (c.mount) treeNode(c.mount, "", c.name, depth + 1, out); else treeNode(fo, join(p, c.name), c.name, depth + 1, out); }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [57] - 2026-11-24 — Slow click renames a folder in the left pane
+
+### Fixed
+- **A slow second click on the open folder's name in the left pane renames it in place**, as in the right pane.
+
 ## [56] - 2026-11-24 — Dialogs, sorting and renaming in the file manager
 
 ### Fixed
