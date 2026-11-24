@@ -2,6 +2,7 @@ package filesync
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -276,6 +277,9 @@ func (f *Folder) apply(fi, l FileInfo, conflict bool, src Source) (bool, error) 
 	if err := f.checkLocal(p, &l); err != nil {
 		return false, err
 	}
+	if fi.Deleted {
+		f.dropParts(fi.Name) // what an earlier try had pulled of a file that is gone
+	}
 	switch {
 	case fi.Deleted:
 		if st, err := os.Lstat(p); err == nil {
@@ -428,16 +432,30 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 	if err := os.MkdirAll(tdir, 0o700); err != nil {
 		return false, err
 	}
-	tf, err := os.CreateTemp(tdir, "pull-*")
+	// The file is pulled into a partial file whose name is the file and its version, and it is kept when the pull fails (a network that
+	// is down for hours, a restart): the next try checks which blocks are in it and fetches the rest.  It is dropped only when the file
+	// was deleted meanwhile, and Maintain drops one that nobody came back to.
+	tmp := partPath(tdir, fi)
+	tf, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return false, err
 	}
-	tmp := tf.Name()
-	done := false
+	var psize int64
+	if st, err := tf.Stat(); err == nil {
+		psize = st.Size()
+	}
+	now := time.Now()
+	_ = os.Chtimes(tmp, now, now)
+	done, keep := false, true
 	defer func() {
 		if !done {
+			if st, err := tf.Stat(); err == nil && st.Size() == 0 {
+				keep = false // nothing came of it
+			}
 			tf.Close()
-			os.Remove(tmp)
+			if !keep {
+				os.Remove(tmp)
+			}
 		}
 	}()
 	// the blocks the old file has, by hash
@@ -457,12 +475,23 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 	fl := f.flyStart(fi, tmp)
 	defer f.flyEnd(fl)
 	var want []Block
+	resumed := 0
 	for bi, b := range fi.Blocks {
 		var data []byte
 		if lb, ok := have[b.Hash]; ok && lb.Size == b.Size {
 			buf := make([]byte, b.Size)
 			if _, err := old.ReadAt(buf, lb.Off); err == nil && sha256.Sum256(buf) == b.Hash {
 				data = buf
+			}
+		}
+		if data == nil && b.Off+int64(b.Size) <= psize { // a block that an earlier try left in the partial file, if it is whole
+			buf := make([]byte, b.Size)
+			if _, err := tf.ReadAt(buf, b.Off); err == nil && sha256.Sum256(buf) == b.Hash {
+				resumed++
+				if fl != nil {
+					fl.mark(bi)
+				}
+				continue
 			}
 		}
 		if data == nil {
@@ -475,6 +504,9 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 		if fl != nil {
 			fl.mark(bi)
 		}
+	}
+	if resumed > 0 && f.cfg.Logf != nil {
+		f.cfg.Logf("filesync: %s: %d of %d blocks were here from an earlier try; fetching the other %d", fi.Name, resumed, len(fi.Blocks), len(want))
 	}
 	if err := f.fetch(tf, fi, want, src, fl); err != nil {
 		return false, err
@@ -510,6 +542,7 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 	f.dm.mu.Lock()
 	if f.doomedLocked(fi) {
 		f.dm.mu.Unlock()
+		keep = false
 		return false, errDoomed
 	}
 	if st, err := os.Lstat(p); err == nil {
@@ -528,11 +561,36 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 	}
 	f.dm.mu.Unlock()
 	done = true
+	f.dropParts(fi.Name) // the partial files of other versions of it
 	syncDirShared(filepath.Dir(p))
 	if err := f.stage("after-swap"); err != nil {
 		return false, err
 	}
 	return true, f.ix.put(fi)
+}
+
+// partKeep is how long a partial file of a pull that did not finish is kept after the last try.
+const partKeep = 72 * time.Hour
+
+// partPath is the partial file of one version of a file.  Whatever is in it is checked block by block against the hashes before it is
+// used, so a name that two versions happened to share would cost only a refetch.
+func partPath(tdir string, fi FileInfo) string {
+	h := sha256.Sum256([]byte(fi.Version.String() + "\x00" + fmt.Sprint(fi.Size)))
+	return filepath.Join(tdir, partPrefix(fi.Name)+hex.EncodeToString(h[:10]))
+}
+
+// partPrefix starts the names of all the partial files of one file, whatever their version.
+func partPrefix(name string) string {
+	h := sha256.Sum256([]byte(name))
+	return "part-" + hex.EncodeToString(h[:10]) + "-"
+}
+
+// dropParts removes the partial files of a file: it arrived, or it is gone.
+func (f *Folder) dropParts(name string) {
+	old, _ := filepath.Glob(filepath.Join(f.root, MetaDir, "tmp", partPrefix(name)+"*"))
+	for _, p := range old {
+		os.Remove(p)
+	}
 }
 
 func syncDir(d string) {
@@ -557,6 +615,12 @@ func (f *Folder) Maintain() error {
 	}
 	if ents, err := os.ReadDir(filepath.Join(f.root, MetaDir, "tmp")); err == nil { // uploads nobody came back to
 		for _, e := range ents {
+			if strings.HasPrefix(e.Name(), "part-") || strings.HasPrefix(e.Name(), "pull-") { // pulls that did not finish, and were not tried again
+				if fi, err := e.Info(); err == nil && time.Since(fi.ModTime()) > partKeep {
+					os.Remove(filepath.Join(f.root, MetaDir, "tmp", e.Name()))
+				}
+				continue
+			}
 			if strings.HasPrefix(e.Name(), "resume-") {
 				if st, err := e.Info(); err == nil && f.now().Sub(st.ModTime()) > 48*time.Hour {
 					os.Remove(filepath.Join(f.root, MetaDir, "tmp", e.Name()))

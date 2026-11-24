@@ -4415,7 +4415,7 @@
     const sk = (e) => (e.folder != null ? e.folder + "/" : "") + e.path;   // a row's key: a match from another folder may share a path
     const fof = (e) => e.folder || kept.folder;
     let anchor = -1, cursor = -1;   // row numbers: where a Shift+click range starts, and the row the keyboard is on
-    const stopBtn = (fn) => h("button", { class: "btn small danger stop", type: "button", title: "Cancel", "aria-label": "Cancel", onclick: fn }, "✕");   // a red x on the line of a transfer
+    const stopBtn = (fn) => h("button", { class: "stop", type: "button", title: "Cancel", "aria-label": "Cancel", onclick: fn }, "✕");   // a red x on the line of a transfer
     let jobSeq = 0;
     const jobs = new Map();         // the transfers that are running, each on a line of its own in the footer (key → what it says)
     const setJob = (k, node) => { jobs.set(k, node); drawFoot(); };
@@ -5182,9 +5182,9 @@
     // one folder of one node: in step with the others when every sync with a peer was lately and clean
     const syncWord = (f, peers) => {
       if (f.paused) return [h("span", { class: "pill tiny" }, "paused")];
-      if (f.error) return [h("span", { class: "pill bad tiny" }, "problem"), " " + f.error];
+      if (f.error) return [h("span", { class: "pill bad tiny" }, "problem"), " ", h("span", { class: "wraptext" }, f.error)];
       const ps = f.peers || [], bad = ps.filter((p) => p.error), stale = ps.filter((p) => !p.error && Date.now() / 1000 - p.at > 120);
-      if (bad.length) return [h("span", { class: "pill bad tiny" }, "error"), " " + bad[0].error];
+      if (bad.length) return [h("span", { class: "pill bad tiny" }, "error"), " ", h("span", { class: "wraptext" }, bad[0].error)];
       if (stale.length) return [h("span", { class: "pill tiny" }, "behind"), " last asked " + ago(Math.min(...stale.map((p) => p.at)))];
       const moving = ps.some((p) => p.moved > 0 && Date.now() / 1000 - p.at < 30);
       return [h("span", { class: "pill ok tiny" }, moving ? "syncing" : "in step"), ps.length ? " with " + ps.length + " node" + (ps.length === 1 ? "" : "s") : (peers ? "" : " (single node)")];
@@ -5281,7 +5281,7 @@
     }
     async function load() {
       const my = ++seq;
-      try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); draw(r); } } catch (e) { fail(status)(e); }
+      try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); const sx = [...box.querySelectorAll(".scroll")].map((el) => el.scrollLeft); draw(r); box.querySelectorAll(".scroll").forEach((el, i) => { el.scrollLeft = sx[i] || 0; }); } } catch (e) { fail(status)(e); }   // the page is redrawn every few seconds: a table that was scrolled stays where it was
     }
     return {
       mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); repCard = section("Replication", rep); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard); load(); },
