@@ -5214,7 +5214,8 @@
     function diskPies(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
       const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
-      for (const n of nodes) {
+      const byName = (x) => x.name || x.node;
+      for (const n of nodes.slice().sort((x, y) => byName(x).localeCompare(byName(y), undefined, { numeric: true, sensitivity: "base" }))) {   // by node name
         const disks = new Map();
         for (const f of n.folders) {
           if (!f.disk_id) continue;

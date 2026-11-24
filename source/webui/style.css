@@ -981,7 +981,7 @@ table.fstat.xfer td:last-child { white-space: nowrap; }
 .xbar > i { display: block; height: 100%; background: #3fb27f; }
 table.fstat.repl { table-layout: fixed; }
 table.fstat.repl th:first-child, table.fstat.repl td:first-child { width: 12rem; }
-.disks { display: flex; flex-wrap: wrap; gap: 1.5rem 2.5rem; }
+.disks { display: flex; flex-wrap: wrap; justify-content: space-evenly; gap: 1.5rem 4rem; padding: .3rem 0; }
 .disk { display: flex; gap: 1rem; align-items: center; }
 .disk svg { flex: none; }
 .disk-title { font-weight: 600; margin-bottom: .1rem; }

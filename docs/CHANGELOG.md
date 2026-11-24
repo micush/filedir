@@ -1,5 +1,10 @@
 # Changelog
 
+## [65] - 2026-11-24 — Disk space: spread out, by node name
+
+### Changed
+- The pies of the Disk space card are in alphabetical order of the node names and spread evenly across the card.
+
 ## [64] - 2026-11-24 — A backup no longer holds the synced files
 
 ### Changed
