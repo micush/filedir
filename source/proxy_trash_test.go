@@ -14,6 +14,9 @@ func TestProxyAllowsOnlyReadingAndTheTrashOfFiles(t *testing.T) {
 			t.Errorf("%s %s: %v", m, p, err)
 		}
 	}
+	if err := proxyAllowed("POST", "/api/files/speedtest"); err != nil { // the speed test of the node the menu picked
+		t.Errorf("POST /api/files/speedtest: %v", err)
+	}
 	for _, p := range []string{"/api/files/list?folder=x", "/api/files/search?q=a", "/api/files/size?folder=x", "/api/files/text?folder=x&path=a", "/api/files/status?local=1"} {
 		if err := proxyAllowed("GET", p); err != nil {
 			t.Errorf("GET %s: %v", p, err)

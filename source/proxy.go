@@ -32,7 +32,7 @@ type proxyCtxKey struct{}
 // them except login, logout and the session, which belong to the node the
 // operator logged in to.  The Files page is the same on every node: only its reading calls and its trash (each node's own) can be relayed, so that the page can look at another node's copy.
 var proxyPrefixes = []string{
-	"/api/files/trash", "/api/files/list", "/api/files/search", "/api/files/size", "/api/files/text", "/api/files/status", "/api/logs", "/api/gateways", "/api/neighbors", "/api/canvas", "/api/assert-agc",
+	"/api/files/trash", "/api/files/speedtest", "/api/files/list", "/api/files/search", "/api/files/size", "/api/files/text", "/api/files/status", "/api/logs", "/api/gateways", "/api/neighbors", "/api/canvas", "/api/assert-agc",
 	"/api/config", "/api/versions", "/api/tls", "/api/cluster", "/api/update", "/api/power", "/api/users", "/api/nodepause", "/api/noderename", "/api/bgp", "/api/ospf", "/api/dnsreg", "/api/snmp", "/api/lldp", "/api/log", "/api/mcpusage", "/api/scan", "/api/nettool", "/api/whois", "/api/dig", "/api/curl", "/api/portcheck", "/api/tlscheck", "/api/arp", "/api/wake", "/api/host", "/api/hostlookup", "/api/dnslookup", "/api/schedule", "/api/alerts", "/api/backup", "/api/capture", "/api/vmactest", "/api/tshoot/node",
 }
 

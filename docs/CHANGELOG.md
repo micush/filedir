@@ -1,5 +1,8 @@
 # Changelog
 
+## [84]
+- Test speed is a link, not a button, and follows the Node menu: it tests the node that is picked (this one when none is), asking it through the relay like the trash, and says which node each line is about ("From filedir2 to filedir1", "Hashing on filedir1"). The result is kept for the node it was made on and shown only when that node is the picked one. `/api/files/speedtest` may be relayed (proxy.go, and the test of what may be).
+
 ## [83]
 - **Test speed**, a button in the Files status page's Replication card (`POST /api/files/speedtest`, and `/cluster/files/speed` between the nodes). A replication that is slower than the network does not say why; this measures the parts apart, on the node you are signed in to as the receiver: the data from each other node over the same signed, encrypted file channel with nothing else in the way (sent from memory, thrown away on arrival: no disk, no hash, 16 requests at once as a replication makes), then how fast one core of this node hashes a block (BLAKE3, and SHA-256 for comparison) and how fast its disk takes a write (about 512 MB, synced, in the first folder's own directory, removed after). Compare the first with a real transfer: if the channel is fast and a replication is not, the time goes to the disk or the hash. It needs version 83 on the other nodes too. Asked for after two nodes on a 6.5 Gbit/s network stayed at 2.5 Gbit/s, with no way to see where.
 

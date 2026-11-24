@@ -186,7 +186,7 @@
   // Everything follows the node picked in the top bar (relayed through the node
   // you are logged in to) except the login itself.  The picker's own list of
   // nodes is asked of the login node explicitly (api(..., true)).
-  const TRASH_API = /^\/api\/files\/(trash(\/|\?|$)|list\?|search\?|size\?|text\?|status\?local=1)/;   // the exceptions: a trash is each node's own, and the Files page looks at the picked node's copy of the folders (the rest of its API acts on the node signed in to)
+  const TRASH_API = /^\/api\/files\/(trash(\/|\?|$)|list\?|search\?|size\?|text\?|status\?local=1|speedtest$)/;   // the exceptions: a trash is each node's own, and the Files page looks at the picked node's copy of the folders (the rest of its API acts on the node signed in to)
   const LOCAL_API = /^\/api\/(login|logout|session|proxy|tshoot\/download|files)(\/|\?|$)/;   // the files are the same on every node, and a transfer is made with the node signed in to: the Files page ignores the Node menu
   // The Node menu's "Cluster" entry: Monitor ▸ Node shows every node's numbers added together (the node you are logged in to
   // asks the others), and Monitor ▸ Capture captures on every node.  Only those pages offer it, and only their requests change;
@@ -5313,27 +5313,36 @@
       }
       return out;
     }
-    // Speed test: this node, as the receiver, against each other node with nothing else in the way, and how fast it hashes and writes.
+    // Speed test of the node the Node menu has picked (this one when none is): that node as the receiver, against each other node with
+    // nothing else in the way, and how fast it hashes and writes.  The result is kept for the node it was made on.
     let speed, speedRes = null, speedBusy = false;
+    const targetId = () => { const m = state.target ? state.nodes.find((n) => n.addr === state.target) : state.nodes.find((n) => n.self); return m ? m.node_id : null; };
     function drawSpeed() {
-      const nameOf = (id) => { const n = shownNodes.find((x) => x.node === id); return n ? n.name || n.node : id; };
+      const nameOf = (id) => { const n = shownNodes.find((x) => x.node === id); return n ? n.name || n.node : id || "this node"; };
       const mbps = (v) => Math.round(v).toLocaleString() + " Mbps";
       const mbs = (v) => Math.round(v).toLocaleString() + " MB/s";
+      const ro = !!(state.session && state.session.read_only), tid = targetId(), me = nameOf(tid);
       const lines = [];
-      if (speedRes && speedRes.error) lines.push(speedRes.error);
-      else if (speedRes) {
-        for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + ": " + (p.error ? p.error : mbps(p.mbit)));
-        lines.push("Hashing on this node, one core: BLAKE3 " + mbs(speedRes.hash.blake3_mbs) + ", SHA-256 " + mbs(speedRes.hash.sha256_mbs));
-        lines.push(speedRes.disk.error ? "Disk of this node: " + speedRes.disk.error : "Disk write on this node (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
+      if (speedRes && speedRes.for === tid) {
+        if (speedRes.error) lines.push(speedRes.error);
+        else {
+          for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + " to " + me + ": " + (p.error ? p.error : mbps(p.mbit)));
+          lines.push("Hashing on " + me + ", one core: BLAKE3 " + mbs(speedRes.hash.blake3_mbs) + ", SHA-256 " + mbs(speedRes.hash.sha256_mbs));
+          lines.push(speedRes.disk.error ? "Disk of " + me + ": " + speedRes.disk.error : "Disk write on " + me + " (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
+        }
       }
+      const tip = "Measures " + me + " as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast " + me + " hashes and writes. It moves a few hundred megabytes from each node.";
+      const run = async (e) => {
+        e.preventDefault();
+        if (speedBusy) return;
+        const forId = tid;
+        speedBusy = true; drawSpeed();
+        try { speedRes = { for: forId, ...(await api("POST", "/api/files/speedtest", { mb: 512 })).data }; } catch (err) { speedRes = { for: forId, error: err.message }; }
+        speedBusy = false; drawSpeed();
+      };
       speed.replaceChildren(
-        h("button", { type: "button", class: "btn", disabled: speedBusy || (state.session && state.session.read_only) ? "" : null,
-          title: "Measures this node as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast this node hashes and writes. Sign in to another node to test it as the receiver. It moves a few hundred megabytes from each node.",
-          onclick: async () => {
-            speedBusy = true; drawSpeed();
-            try { speedRes = (await api("POST", "/api/files/speedtest", { mb: 512 }, true)).data; } catch (e) { speedRes = { error: e.message }; }
-            speedBusy = false; drawSpeed();
-          } }, speedBusy ? "Testing…" : "Test speed"),
+        speedBusy || ro ? h("span", { class: "muted", title: ro ? "A read-only account cannot run the test" : tip }, speedBusy ? "Testing " + me + "…" : "Test speed")
+          : h("a", { href: "#", title: tip, onclick: run }, "Test speed of " + me),
         ...lines.map((t) => h("div", { class: "muted speedline" }, t)));
     }
     function diskPies(nodes) {
@@ -5377,6 +5386,7 @@
       const nodeName = (x) => x.name || x.node;   // every card lists the nodes by name
       const nodes = (r.nodes || []).slice().sort((x, y) => nodeName(x).localeCompare(nodeName(y), undefined, { numeric: true, sensitivity: "base" }));
       shownNodes = nodes;
+      drawSpeed();
       const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
       else {
