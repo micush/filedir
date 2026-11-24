@@ -1,0 +1,117 @@
+# Example Prometheus alert rules for filedir.  Copy this file next to prometheus.yml, list it under rule_files:, and adjust the
+# thresholds.  The first rule expects the scrape job to be called "filedir"; change that name to match yours.
+groups:
+  - name: filedir
+    rules:
+      - alert: FiledirNodeDown
+        expr: up{job="filedir"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} cannot be scraped"
+      - alert: FiledirChronyNotRunning
+        expr: filedir_chrony_running == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: chrony is not running"
+      - alert: FiledirNotSynchronised
+        expr: filedir_chrony_synchronised == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: the clock is not synchronised"
+      - alert: FiledirClockOffset
+        expr: abs(filedir_chrony_offset_ms) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the clock is more than 100 ms off"
+      - alert: FiledirHighStratum
+        expr: filedir_chrony_stratum >= 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: stratum {{ $value }}"
+      - alert: FiledirNoReachableSource
+        expr: sum by (instance) (filedir_chrony_source_reach) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: chrony has not heard from any source"
+      - alert: FiledirNoActiveGateway
+        expr: sum by (group, af) (filedir_gateway_active) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No node is the active gateway of group {{ $labels.group }} ({{ $labels.af }})"
+      - alert: FiledirGatewayNotListening
+        expr: filedir_gateway_service_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the NTP listener of group {{ $labels.group }} is down"
+      - alert: FiledirUpstreamDown
+        expr: filedir_upstream_healthy == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: upstream server {{ $labels.server }} is down"
+      - alert: FiledirFalseticker
+        expr: filedir_upstream_falseticker == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: upstream server {{ $labels.server }} disagrees with the others"
+      - alert: FiledirCriticalAlertOpen
+        expr: filedir_alerts_active{severity="critical"} > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: a critical alert has been open for 10 minutes (see Monitor ▸ Alerts)"
+      - alert: FiledirCertificateExpiresSoon
+        expr: filedir_certificate_expires_in_seconds < 14 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the {{ $labels.certificate }} certificate expires in less than 14 days"
+      - alert: FiledirCertificateExpiresVerySoon
+        expr: filedir_certificate_expires_in_seconds < 3 * 86400
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: the {{ $labels.certificate }} certificate expires in less than 3 days"
+      - alert: FiledirHostCPU
+        expr: filedir_host_cpu_percent > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: CPU above 90% for 15 minutes"
+      - alert: FiledirHostMemory
+        expr: filedir_host_memory_used_bytes / filedir_host_memory_total_bytes > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: more than 90% of the memory is in use"
+      - alert: FiledirFilesystemFull
+        expr: filedir_host_filesystem_used_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $labels.mount }} is more than 90% full"

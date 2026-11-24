@@ -1,0 +1,6 @@
+# /etc/pam.d/filedir — Debian / Ubuntu
+# Password check for the filedir web GUI. Group membership (default group "filedir")
+# is enforced by filedir itself; PAM only proves who the user is and that the
+# account is valid.
+@include common-auth
+@include common-account
