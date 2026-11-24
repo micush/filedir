@@ -1,5 +1,8 @@
 # Changelog
 
+## [81]
+- Replication moves blocks with less CPU: the buffers a block is read into, sent from and received into come from a pool and go back to it, instead of a new multi-megabyte buffer (cleared, then swept by the collector) for every block; a batch of small blocks is sent as it is read and not copied into one buffer first. Found by looking at why two nodes stopped at 2.2 Gbit/s: the receiving node's cores were at 80-85% user time (old CPUs without the SHA instructions).
+
 ## [80]
 - The replication graphs are in Mbps (megabits a second), like the replication limit.
 

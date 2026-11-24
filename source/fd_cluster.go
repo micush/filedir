@@ -464,21 +464,26 @@ func (x *fdSource) Block(folder, name string, off int64, size int, h filesync.Ha
 	var data []byte
 	err := cl.callFiles(ctx, x.get(), "/cluster/files/block", body, func(rd io.Reader) error {
 		// the size is known: one buffer, not the copies and doublings that ReadAll makes of a big block
-		b := make([]byte, size)
+		b := filesync.GetBuf(size) // handed back by the engine when it has written the block (RecyclesBlocks)
 		n, err := io.ReadFull(rd, b)
 		if err == io.ErrUnexpectedEOF || err == io.EOF {
 			err = nil // a short block: the caller says it does not match
 		}
-		data = b[:n]
 		x.svc.traffic.rx.Add(int64(n))
 		var one [1]byte
 		if m, _ := rd.Read(one[:]); m > 0 && err == nil {
-			data = append(data, one[0]) // longer than asked: it does not match either
+			data = append(append([]byte(nil), b[:n]...), one[0]) // longer than asked: it does not match either
+			filesync.PutBuf(b)
+			return err
 		}
+		data = b[:n]
 		return err
 	}, tmo)
 	return data, err
 }
+
+// RecyclesBlocks says that the blocks Block gives are the engine's to hand back to the pool (filesync.BlockRecycler).
+func (x *fdSource) RecyclesBlocks() {}
 
 type fdBlocksReq struct {
 	Folder string `json:"folder"`
@@ -618,23 +623,30 @@ func (c *Cluster) handleFilesBlocks(rw http.ResponseWriter, r *http.Request, cal
 		jsonError(rw, http.StatusNotFound, "no such folder here")
 		return
 	}
-	var buf bytes.Buffer
+	rw.Header().Set("Content-Type", "application/octet-stream")
+	out := fdThrottleWriter{rw, &fdLimRepl, r.Context()} // what this node sends the others, within its replication limit
 	for _, it := range q.Items {
-		data, err := f.f.Block(it.Name, it.Off, it.Size, it.Hash)
+		data, release, err := f.f.BlockPooled(it.Name, it.Off, it.Size, it.Hash)
 		var h [5]byte
-		if err == nil {
-			h[0] = 1
-			binary.BigEndian.PutUint32(h[1:], uint32(len(data)))
-			buf.Write(h[:])
-			buf.Write(data)
-			c.files.served.Add(1)
-			c.files.traffic.tx.Add(int64(len(data)))
-		} else {
-			buf.Write(h[:])
+		if err != nil {
+			out.Write(h[:])
+			continue
+		}
+		h[0] = 1
+		binary.BigEndian.PutUint32(h[1:], uint32(len(data)))
+		_, werr := out.Write(h[:])
+		if werr == nil {
+			_, werr = out.Write(data)
+		}
+		c.files.served.Add(1)
+		c.files.traffic.tx.Add(int64(len(data)))
+		if release != nil {
+			release()
+		}
+		if werr != nil {
+			return
 		}
 	}
-	rw.Header().Set("Content-Type", "application/octet-stream")
-	fdThrottleWriter{rw, &fdLimRepl, r.Context()}.Write(buf.Bytes())
 }
 
 // applyFileListener starts the file transfer listener (c.mu is held).  It has its own port so that bulk transfers do not share the
@@ -864,10 +876,13 @@ func (c *Cluster) handleFilesBlock(rw http.ResponseWriter, r *http.Request, call
 		jsonError(rw, http.StatusNotFound, "no such folder here")
 		return
 	}
-	data, err := f.f.Block(q.Name, q.Off, q.Size, q.Hash)
+	data, release, err := f.f.BlockPooled(q.Name, q.Off, q.Size, q.Hash)
 	if err != nil {
 		jsonError(rw, http.StatusConflict, "block not available")
 		return
+	}
+	if release != nil {
+		defer release()
 	}
 	c.files.served.Add(1)
 	c.files.traffic.tx.Add(int64(len(data)))

@@ -339,10 +339,18 @@ func (f *Folder) fetchOne(tf *os.File, fi FileInfo, b Block, s Source) error {
 	if err != nil {
 		return err
 	}
+	_, recycle := s.(BlockRecycler)
 	if len(d) != int(b.Size) || sha256.Sum256(d) != b.Hash {
+		if recycle {
+			PutBuf(d)
+		}
 		return fmt.Errorf("%w: a block of %s does not match its hash", ErrBadInfo, fi.Name)
 	}
-	if _, err := tf.WriteAt(d, b.Off); err != nil {
+	_, err = tf.WriteAt(d, b.Off)
+	if recycle {
+		PutBuf(d)
+	}
+	if err != nil {
 		return err
 	}
 	f.hookMu.Lock()

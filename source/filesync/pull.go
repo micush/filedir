@@ -19,43 +19,72 @@ var errNotEmpty = errors.New("filesync: directory is not empty")
 // Block serves a block of a file to a peer.  What is read is checked against the hash first, so a file that has changed since it was
 // scanned is never sent as if it were the old one.
 func (f *Folder) Block(name string, off int64, size int, hash Hash) ([]byte, error) {
+	d, _, err := f.block(name, off, size, hash, false)
+	return d, err
+}
+
+// BlockPooled is Block for a caller that is done with the data once it has sent it: the buffer comes from the pool, and release (nil when
+// the data is not pooled) gives it back.
+func (f *Folder) BlockPooled(name string, off int64, size int, hash Hash) (data []byte, release func(), err error) {
+	return f.block(name, off, size, hash, true)
+}
+
+func (f *Folder) block(name string, off int64, size int, hash Hash, pooled bool) ([]byte, func(), error) {
 	if size <= 0 || size > maxBlock {
-		return nil, fmt.Errorf("%w: %s", ErrChanged, name)
+		return nil, nil, fmt.Errorf("%w: %s", ErrChanged, name)
 	}
 	l, ok := f.ix.get(name)
 	if !ok || l.Deleted || l.Kind != KFile {
 		if fd, ok := f.flightBlock(name, off, size, hash); ok { // a file that is new here and is being pulled
-			return fd, nil
+			return fd, nil, nil
 		}
-		return nil, fmt.Errorf("%w: %s", ErrChanged, name)
+		return nil, nil, fmt.Errorf("%w: %s", ErrChanged, name)
 	}
 	p, err := f.full(name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	d, err := readBlock(p, off, size, hash)
+	d, rel, err := readBlockBuf(p, off, size, hash, pooled)
 	if err != nil { // not in the file that is in place: perhaps it has arrived of a newer one that is being pulled
 		if fd, ok := f.flightBlock(name, off, size, hash); ok {
-			return fd, nil
+			return fd, nil, nil
 		}
 	}
-	return d, err
+	return d, rel, err
 }
 
 func readBlock(p string, off int64, size int, hash Hash) ([]byte, error) {
+	d, _, err := readBlockBuf(p, off, size, hash, false)
+	return d, err
+}
+
+func readBlockBuf(p string, off int64, size int, hash Hash, pooled bool) ([]byte, func(), error) {
 	fh, err := os.Open(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer fh.Close()
-	buf := make([]byte, size)
+	var buf []byte
+	var rel func()
+	if pooled {
+		buf = GetBuf(size)
+		rel = func() { PutBuf(buf) }
+	} else {
+		buf = make([]byte, size)
+	}
 	if _, err := fh.ReadAt(buf, off); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrChanged, err)
+		if rel != nil {
+			rel()
+		}
+		return nil, nil, fmt.Errorf("%w: %v", ErrChanged, err)
 	}
 	if sha256.Sum256(buf) != hash {
-		return nil, ErrChanged
+		if rel != nil {
+			rel()
+		}
+		return nil, nil, ErrChanged
 	}
-	return buf, nil
+	return buf, rel, nil
 }
 
 func depth(name string) int { return strings.Count(name, "/") }
