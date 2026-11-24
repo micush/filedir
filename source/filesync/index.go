@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -172,6 +173,10 @@ func (ix *index) put(fis ...FileInfo) error {
 	if len(fis) == 0 {
 		return nil
 	}
+	// The peer reads the index in pages, in the order of the positions given here.  What was deleted is therefore given positions with
+	// what is under a folder before the folder: a page that ends in the middle must not hand over a folder's deletion before the deletions
+	// of what is in it, because the folder cannot be removed yet and was kept, and came back on every node as an empty folder.
+	fis = deletionsLast(fis)
 	ix.mu.Lock()
 	ix.snap = nil
 	lns := make([]journalLine, 0, len(fis))
@@ -276,4 +281,30 @@ func (ix *index) after(s int64) ([]FileInfo, int64) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out, ix.seq
+}
+
+// deletionsLast puts the entries that are not deletions first, as they were given, and then the deletions, the deepest first.
+func deletionsLast(fis []FileInfo) []FileInfo {
+	n := 0
+	for _, fi := range fis {
+		if fi.Deleted {
+			n++
+		}
+	}
+	if n == 0 {
+		return fis
+	}
+	out := make([]FileInfo, 0, len(fis))
+	dels := make([]FileInfo, 0, n)
+	for _, fi := range fis {
+		if fi.Deleted {
+			dels = append(dels, fi)
+		} else {
+			out = append(out, fi)
+		}
+	}
+	sort.SliceStable(dels, func(i, j int) bool {
+		return strings.Count(dels[i].Name, "/") > strings.Count(dels[j].Name, "/")
+	})
+	return append(out, dels...)
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [54] - 2026-11-24 — A deleted folder tree no longer comes back as empty folders
+
+### Fixed
+- **A deleted folder tree came back as a skeleton of empty folders, on every node.** The log of v53 showed why: the kept folders still held files, because the other node's index is read in pages of 5,000 entries and the deletions were numbered folder first, files after. A page that ended between a folder's deletion and the deletions of what was in it handed over the folder first; the folder could not be removed yet, was kept with a newer version, and brought its parent folders back with it, one chain per page boundary. Deletions are now numbered with what is under a folder before the folder itself, so no page can split them (every writer of the index goes through this).
+- **A folder with nothing in it no longer beats a deletion.** A folder that had been kept before carried a change of its own and counted as "a change here beats the deletion", so the next deletion of its tree failed the same way. An empty folder now loses to the deletion.
+
+### Verified
+- gofmt, vet, `go test -race ./...`, the five cross builds. New tests: a deletion read in pages of 7, 50 and 333 entries (fails without the fix), and an empty folder changed here against a deletion. Not checked on the cluster. Folders left over from earlier runs go away with the next delete of them; the first deletion of the old skeleton may still need a second pass because their versions are old.
+
 ## [53] - 2026-11-23 — The log says why a deleted folder is kept
 
 ### Added

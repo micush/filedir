@@ -350,3 +350,78 @@ func TestKeptFolderIsLogged(t *testing.T) {
 		t.Errorf("the log does not say why d/e was kept: %q", lines)
 	}
 }
+
+// pagedSrc hands the index out a page at a time, as a node does (fdIndexBatch): the peer asks again from where the page ends.
+type pagedSrc struct {
+	*local
+	page int
+}
+
+func (s pagedSrc) Index(folder string, after int64) ([]FileInfo, int64, error) {
+	es, max, err := s.local.Index(folder, after)
+	if err == nil && len(es) > s.page {
+		es = es[:s.page]
+		max = es[len(es)-1].Seq
+	}
+	return es, max, err
+}
+
+// The index of a big deletion arrives in pages.  A page that ends between a folder's deletion and the deletions of what is in it must not
+// make this node keep the folder: that brought the deleted folders back as empty ones, on every node.
+func TestDeletionInPagesLeavesNothing(t *testing.T) {
+	for _, page := range []int{7, 50, 333} {
+		a := newNode(t, "A")
+		b := newNode(t, "B")
+		for i := 0; i < 600; i++ {
+			a.write(t, fmt.Sprintf("proj/r%d/.git/objects/%02x/o%d", i%4, i%32, i), "obj")
+			a.write(t, fmt.Sprintf("proj/r%d/src/m%d/n%d/f%d.go", i%4, i%9, i%3, i), "code")
+		}
+		a.write(t, "keep.txt", "k")
+		a.scan(t)
+		b.sync(t, a)
+		if err := a.f.Delete("proj"); err != nil {
+			t.Fatal(err)
+		}
+		src := pagedSrc{&local{f: a.f, fail: -1}, page}
+		for round := 0; round < 400; round++ {
+			n, err := b.f.SyncFrom(a.id, src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n == 0 && round > 2 {
+				break
+			}
+		}
+		for round := 0; round < 3; round++ {
+			a.sync(t, b)
+			b.sync(t, a)
+		}
+		noneUnder(t, b, "proj")
+		noneUnder(t, a, "proj")
+		if t.Failed() {
+			t.Fatalf("page size %d", page)
+		}
+	}
+}
+
+// An empty folder that was changed here (its mode) while the peer deleted it does not beat the deletion.
+func TestEmptyChangedFolderLosesToDeletion(t *testing.T) {
+	a := newNode(t, "A")
+	b := newNode(t, "B")
+	os.MkdirAll(a.path("d/e"), 0o755)
+	a.scan(t)
+	b.sync(t, a)
+	if err := os.Chmod(b.path("d/e"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b.scan(t) // a change here that A has not seen
+	if err := a.f.Delete("d"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		b.sync(t, a)
+		a.sync(t, b)
+	}
+	noneUnder(t, a, "d")
+	noneUnder(t, b, "d")
+}

@@ -241,6 +241,11 @@ func (f *Folder) handle(fi FileInfo, src Source) (bool, error) {
 	case fi.Deleted && l.Deleted:
 		l.Version = merged
 		return false, f.ix.put(l)
+	case fi.Deleted && l.Kind == KDir && f.emptyHere(l.Name):
+		// a folder with nothing in it has nothing that could beat a deletion: its version moved on only because it was kept or announced
+		// again before, and that must not bring it back
+		fi.Version = merged
+		return f.apply(fi, l, false, src)
 	case fi.Deleted:
 		f.nt.add("kept "+l.Name+" (a change here beats the peer's deletion): here "+l.Version.String()+" by "+string(l.By)+", the deletion "+fi.Version.String()+" by "+string(fi.By), f.cfg.Logf)
 		return false, f.ix.put(l) // a change beats a deletion: this one stays; it is announced again, so the peer looks at it again
@@ -627,4 +632,17 @@ func (f *Folder) sweepIgnored(p, rel string) error {
 		}
 	}
 	return nil
+}
+
+// emptyHere says whether the folder name has nothing in it on this disk (or is not there).
+func (f *Folder) emptyHere(name string) bool {
+	p, err := f.full(name)
+	if err != nil {
+		return false
+	}
+	ents, err := os.ReadDir(p)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	return len(ents) == 0
 }
