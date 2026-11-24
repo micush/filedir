@@ -1,5 +1,18 @@
 # Changelog
 
+## [55] - 2026-11-24 — Enter in a dialog does what the button does
+
+### Fixed
+- **The folder menus say "Upload", "New" and "Paste"**, not "Upload here", "New here" and "Paste here" (the folder is the one that was right-clicked).
+- **Pressing Enter in a dialog with a text box (New folder, New file, Rename, …) closed it without doing anything.** Enter pressed the first button of the dialog, which is Cancel, so the name was thrown away and only a click on the Create / Save button worked. Enter now presses the button that does it.
+- **A reload that was asked for while another one was running was dropped.** The file list reloads after every action; if the running reload had read the list before the change, the list stayed as it was until the next refresh. It now runs again as soon as the running one is done.
+
+### Not changed
+- "New folder" makes the folder on the disk and asks for a scan, and the list is read from the index, so a folder can take a moment to show (longer while a sync is running). Uploaded files go into the index at once; folders do not yet.
+
+### Verified
+- `node --check` of the web UI, gofmt, vet, `go test -race ./...`, the five cross builds. The page was not run in a browser here.
+
 ## [54] - 2026-11-24 — A deleted folder tree no longer comes back as empty folders
 
 ### Fixed

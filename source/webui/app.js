@@ -4445,7 +4445,8 @@
             if (msg) { err.textContent = msg; err.classList.remove("hidden"); } else { d.close(); }
           } }, opts.ok || "OK")));
       d.addEventListener("close", () => d.remove());
-      if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); d.querySelector(".toolbar button").click(); } });
+      // Enter presses the last button of the dialog, the one that does it (the first is Cancel)
+      if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); d.querySelector(".toolbar").lastElementChild.click(); } });
       root.append(d); d.showModal();
       if (input) { input.focus(); const dot = input.value.lastIndexOf("."); input.setSelectionRange(0, dot > 0 ? dot : input.value.length); }
     }
@@ -4770,7 +4771,7 @@
       searching() ? ["Show in folder", () => reveal(e)] : null,
       e.kind === "file" ? ["Download", () => download(e, fof(e))] : e.kind === "dir" ? ["Download as zip", () => (e.mount ? downloadZip([{ path: "" }], e.mount) : downloadZip([e], fof(e)))] : null,
       "-",
-      ...(e.kind === "dir" && !searching() ? (e.mount ? hereItems("", e.mount, " here") : hereItems(e.path, kept.folder, " here")) : []),
+      ...(e.kind === "dir" && !searching() ? (e.mount ? hereItems("", e.mount, "") : hereItems(e.path, kept.folder, "")) : []),
       // one Copy menu for a file: its link on this site, a public link anyone can use (not for read-only accounts), and its path
       e.mount ? ["Copy path", () => copyText(e.mount)] : ["Copy", [
         ...(!ro() ? [["To paste", () => toClip([e])]] : []), ...(canEdit() ? [["Duplicate", () => duplicate([e])]] : []),
@@ -4803,7 +4804,7 @@
     // a folder in the tree; path "" is the synced folder itself
     const treeMenu = (fo, p) => rowMenu(groups([   // Open, Download | Upload, New | Rename, Delete | Properties
       [["Open", () => go(fo, p)], ["Download as zip", () => downloadZip([{ path: p }], fo)]],
-      hereItems(p, fo, " here"),
+      hereItems(p, fo, ""),
       p && !ro() ? [["Rename…", () => { go(fo, parent(p)).then(() => { const e = entries.find((x) => x.path === p); if (e) rename(e); }); }], ["Delete…", () => removeMany([{ name: p.split("/").pop(), path: p, kind: "dir" }], fo), "danger"]] : [],
       [["Properties", () => props([{ kind: "dir", name: p ? p.split("/").pop() : (fo === ROOT ? "The root folder" : fo), path: p, folder: fo }])]],
     ]));
@@ -4977,8 +4978,11 @@
       if (opened.has(k)) opened.delete(k); else { opened.add(k); if (!kids.has(k)) await loadKids(fo, p); }
       treeDrawn = ""; drawTree();
     }
+    let loadAgain = false;
     async function load() {
-      if (busy) return;
+      // a reload asked for while one is under way (the list it reads may be from before the change that asked) is not dropped: it runs
+      // again as soon as the one under way is done, so a folder just made is there
+      if (busy) { loadAgain = true; return; }
       busy = true; const my = ++seq;
       try {
         const st = ((await api("GET", "/api/files/status?local=1")).data.nodes || [])[0];
@@ -5021,7 +5025,7 @@
         } else entries = [];
         await kidsDone;
         draw();
-      } catch (e) { fail(status)(e); } finally { busy = false; }
+      } catch (e) { fail(status)(e); } finally { busy = false; if (loadAgain) { loadAgain = false; load(); } }
     }
     return {
       mount(main) {
