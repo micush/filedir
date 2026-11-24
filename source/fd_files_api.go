@@ -393,12 +393,30 @@ func (w *WebServer) handleFilesDelete(rw http.ResponseWriter, r *http.Request, s
 
 // rescan asks for a scan soon, without waiting for it, and without piling them up.
 func (f *fdFolder) rescan() {
-	if !f.rescanning.CompareAndSwap(false, true) {
+	f.rsMu.Lock()
+	defer f.rsMu.Unlock()
+	if f.rsRunning {
+		f.rsDirty = true // one is on its way or waiting: it will see this change too
 		return
 	}
+	f.rsRunning = true
 	go func() {
-		f.rescanning.Store(false)
-		f.scanNow()
+		for {
+			t0 := time.Now()
+			f.scanNow()
+			took := time.Since(t0)
+			f.rsMu.Lock()
+			if !f.rsDirty {
+				f.rsRunning = false
+				f.rsMu.Unlock()
+				return
+			}
+			f.rsDirty = false
+			f.rsMu.Unlock()
+			// Changes came while it ran (an upload of thousands of files makes one every few milliseconds): the next scan waits twice as long
+			// as this one took, so scanning never takes more than a third of the time, and there is never more than one.
+			time.Sleep(max(time.Second, 2*took))
+		}
 	}()
 }
 

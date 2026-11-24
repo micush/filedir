@@ -52,7 +52,9 @@ type fdFolder struct {
 	trashB     int64
 	trashAt    time.Time
 	trashBusy  bool
-	rescanning atomic.Bool
+	rsMu       sync.Mutex // the rescan after a change made here: one at a time (rescan)
+	rsRunning  bool
+	rsDirty    bool
 	svc        *fdService
 	converting bool            // a stand-in while the index is converted to the current block hash (convert); f is nil
 	convFailed atomic.Bool     // the conversion did not work

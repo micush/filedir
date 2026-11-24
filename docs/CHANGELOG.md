@@ -1,5 +1,8 @@
 # Changelog
 
+## [94]
+- An upload of tens of thousands of files no longer starts a scan of the whole folder for every file. After each change made through the web page (an upload, a delete, a rename) the node asked for a scan, and the check that was meant to keep them from piling up was cleared before the scan began, so with a file every few milliseconds there were hundreds of scans waiting to run one after another, each walking all the files, on the same disk that was trying to write the uploads. Requests took a minute or more ("waiting for the node, 77 s") and the upload crawled. Now there is one scan at a time: the first one starts at once as before, and changes that come while it runs (or waits) are taken by one more scan, which starts after a pause of twice as long as the last scan took (at least a second), so scanning never takes more than a third of the time.
+
 ## [93]
 - An upload sends twelve files at once, not three (never more than three big ones among them). Every small file costs a round trip and a write on the node, so three at a time left the node waiting. Measured against a node with nothing between (1,500 files of 20 KB, two cores): 3 at a time 775 files a second, 8 at a time 912, 16 at a time 999, 32 at a time 1,219. Over a line with some distance the gain is larger, since each request then waits longer for its answer.
 
