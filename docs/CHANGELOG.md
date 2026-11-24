@@ -1,5 +1,10 @@
 # Changelog
 
+## [58] - 2026-11-24 — Upload from URL shows the file when it is done
+
+### Fixed
+- **A file fetched from a web address waited minutes after the last byte before it showed.** The download was written as it came but not hashed, so the node read the whole file again (a scan) before it was in the list and could start to reach the other nodes. When the server says how big the file is, it is now hashed as it is written and goes into the index at once, as uploads and copies already do. A server that does not say (a chunked answer) still gets the scan.
+
 ## [57] - 2026-11-24 — Slow click renames a folder in the left pane
 
 ### Fixed

@@ -188,7 +188,16 @@ func (w *WebServer) handleFilesFetch(rw http.ResponseWriter, r *http.Request, s 
 	go func() {
 		defer cancel()
 		defer res.Body.Close()
-		n, err := f.f.WriteFile(dest, fdThrottleReader{fdCountReader{res.Body, &job.received}, &fdLimUp, ctx})
+		// With the size known the blocks are hashed as the file comes in and it is in the index when it is done, so it shows at once; without,
+		// the scan has to read all of it again (minutes for a big file, with nothing to see).
+		body := fdThrottleReader{fdCountReader{res.Body, &job.received}, &fdLimUp, ctx}
+		var n int64
+		var err error
+		if res.ContentLength >= 0 {
+			n, err = f.f.WriteFileHashed(dest, body, res.ContentLength)
+		} else {
+			n, err = f.f.WriteFile(dest, body)
+		}
 		job.mu.Lock()
 		job.ended, job.size = time.Now(), n
 		switch {
