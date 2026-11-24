@@ -1,5 +1,10 @@
 # Changelog
 
+## [72] - 2026-11-24 — Large icons
+
+### Added
+- **The Files list can be shown as large icons**, as in a file manager: the ☰ / ▦ buttons at the right of the title bar switch between the list and the icons, and the browser remembers the choice. It is the same list laid out as tiles, so selecting (click, Ctrl, Shift), the right-click menus, drag and drop, rename, Delete and opening work the same; the arrow keys move a tile left and right and a whole row of tiles up and down. Size, date and the like are in the tooltip of a tile. The column headers (and so sorting) are in the list view.
+
 ## [71] - 2026-11-24 — A long error can be read on the status page
 
 ### Fixed

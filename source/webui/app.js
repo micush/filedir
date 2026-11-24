@@ -4442,6 +4442,9 @@
     const stamp = (u) => (u ? new Date(u * 1000).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
     const q = (extra, fo) => new URLSearchParams({ folder: fo || kept.folder, ...extra }).toString();
     const icon = (e) => (e.kind === "dir" ? "📁" : e.kind === "link" ? "🔗" : "📄");
+    // the list as a table, or as large icons (the same rows, laid out as tiles): remembered in this browser
+    let iconView = false;
+    try { iconView = localStorage.getItem("filedir.fm.view") === "icons"; } catch (_) { /* no storage: the list */ }
     const plural = (n, one, many) => n.toLocaleString() + " " + (n === 1 ? one : many);
 
     // a small dialog: a title, a text, optionally one box; onOk gets its value and returns null (done) or an error text
@@ -4913,6 +4916,7 @@
     }
     const selectAll = () => { for (const e of entries) sel.add(sk(e)); paintSel(); };
     const focusRow = (i) => { const r = box.querySelectorAll("tr.fm-row")[i]; if (r) { r.focus(); r.scrollIntoView({ block: "nearest" }); } };
+    const tileCols = () => { const rs = box.querySelectorAll("tr.fm-row"); if (!rs.length) return 1; const top = rs[0].offsetTop; let n = 0; while (n < rs.length && rs[n].offsetTop === top) n++; return Math.max(1, n); };
     function rowKey(ev, e, i) {
       const k = ev.key;
       if (k === "Enter") { open(e); return; }
@@ -4922,7 +4926,9 @@
       if (k === "Escape") { sel.clear(); paintSel(); return; }
       if ((k === "a" || k === "A") && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); selectAll(); return; }
       let to = -1;
-      if (k === "ArrowDown") to = Math.min(entries.length - 1, i + 1); else if (k === "ArrowUp") to = Math.max(0, i - 1);
+      const cols = iconView ? tileCols() : 1;   // in the icon view Up and Down go a whole row of tiles, Left and Right one tile
+      if (k === "ArrowDown") to = Math.min(entries.length - 1, i + cols); else if (k === "ArrowUp") to = Math.max(0, i - cols);
+      else if (iconView && k === "ArrowRight") to = Math.min(entries.length - 1, i + 1); else if (iconView && k === "ArrowLeft") to = Math.max(0, i - 1);
       else if (k === "Home") to = 0; else if (k === "End") to = entries.length - 1;
       else if (k === " " && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); pick({ ctrlKey: true }, e, i); return; }
       if (to < 0) return;
@@ -4977,7 +4983,7 @@
     function drawList() {
       if (renamingKey && box.querySelector(".fm-rename")) return;   // a name being typed is not redrawn under the cursor
       sortEntries();
-      const sig = JSON.stringify([searching() ? scopeName() : kept, entries, truncated, ro(), folders.length, term, renamingKey, trash, order]);   // the matches do not move when the tree does
+      const sig = JSON.stringify([searching() ? scopeName() : kept, entries, truncated, ro(), folders.length, term, renamingKey, trash, order, iconView]);   // the matches do not move when the tree does
       if (sig === drawn) { paintSel(); return; }
       drawn = sig;
       const had = box.contains(document.activeElement);
@@ -4986,9 +4992,9 @@
       else if (!entries.length && trash.on) box.append(h("div", { class: "empty" }, "The trash is empty on " + whose() + "."));
       else if (!entries.length && term.trim()) box.append(h("div", { class: "empty" }, "Nothing matches “" + term.trim() + "”."));
       else if (!entries.length) box.append(h("div", { class: "empty" }, "Nothing here yet." + (ro() ? "" : " Drop files or folders here, or right-click for the menu.")));
-      else box.append(h("table", { class: "fm", role: "grid", "aria-multiselectable": "true" },
+      else box.append(h("table", { class: "fm" + (iconView ? " icons" : ""), role: "grid", "aria-multiselectable": "true" },
         h("thead", {}, h("tr", {}, sortHead("name", "Name"), searching() ? sortHead("in", "In") : null, sortHead("size", "Size", "num"), sortHead("mod", trash.on ? "Deleted" : "Modified"), SITE === "files" ? null : sortHead("by", "Node"))),
-        h("tbody", {}, entries.map((e, i) => h("tr", { tabindex: i === 0 ? "0" : "-1", class: "fm-row", "data-kind": e.kind, "data-path": e.path, "aria-label": e.name, "aria-selected": "false",
+        h("tbody", {}, entries.map((e, i) => h("tr", { tabindex: i === 0 ? "0" : "-1", class: "fm-row", role: "row", title: iconView ? e.name + (e.kind === "file" ? "\n" + size(e.size) : "") + (e.mod ? "\n" + stamp(e.mod) : "") + (searching() ? "\n" + parent(e.path) : "") : null, "data-kind": e.kind, "data-path": e.path, "aria-label": e.name, "aria-selected": "false",
           draggable: canEdit() && !e.mount && renamingKey !== sk(e) ? "true" : null,
           ondragstart: canEdit() && !e.mount ? (ev) => {
             if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); paintSel(); }
@@ -4997,7 +5003,7 @@
           } : null,
           ondragend: () => { dragItems = null; for (const x of document.querySelectorAll(".over")) x.classList.remove("over"); },
           onclick: (ev) => pick(ev, e, i), oncontextmenu: (ev) => ctx(ev, e, i), ondblclick: () => { clearTimeout(renameTimer); open(e); }, onkeydown: (ev) => rowKey(ev, e, i) },
-          h("td", {}, icon(e) + " ", renamingKey === sk(e) ? renameInput(e) : e.name, e.conflict ? h("span", { class: "pill tiny" }, "conflict") : null),
+          h("td", { role: "gridcell" }, h("span", { class: "ic" }, icon(e)), " ", h("span", { class: "nm" }, renamingKey === sk(e) ? renameInput(e) : e.name), e.conflict ? h("span", { class: "pill tiny" }, "conflict") : null),
           searching() ? h("td", { class: "muted" }, (SITE === "files" && folders.length < 2 ? "" : e.folder + "/") + parent(e.path)) : null,
           h("td", { class: "num" }, e.kind === "file" ? size(e.size) : ""), h("td", {}, stamp(e.mod)), SITE === "files" ? null : h("td", { class: "muted" }, e.by || ""))))));
       if (entries.length) box.append(h("div", { class: "fm-fill" }));   // always some empty space to right-click, however long the list is
@@ -5054,6 +5060,18 @@
     }
     function draw() {
       drawTree(); drawList(); drawFoot();
+    }
+    // List / Icons: two buttons, one of them pressed
+    function viewSwitch() {
+      const mk = (icons, label, glyph) => h("button", { type: "button", class: "btn small", title: label, "aria-label": label, "aria-pressed": String(iconView === icons),
+        onclick: () => {
+          if (iconView === icons) return;
+          iconView = icons; try { localStorage.setItem("filedir.fm.view", icons ? "icons" : "list"); } catch (_) { /* not kept */ }
+          for (const b of sw.children) b.setAttribute("aria-pressed", String((b === sw.lastChild) === iconView));
+          drawn = ""; drawList();
+        } }, glyph);
+      const sw = h("span", { class: "fm-view" }, mk(false, "List", "☰"), mk(true, "Large icons", "▦"));
+      return sw;
     }
     async function loadKids(fo, p) {
       try {
@@ -5163,7 +5181,7 @@
             if (e.key === "Escape" && filterBox.value) { e.preventDefault(); clearTimeout(ftimer); setFilter(""); }
             else if (e.key === "ArrowDown" && entries.length) { e.preventDefault(); focusRow(Math.max(0, cursor)); }
           } });
-        main.append(h("div", { class: "card" }, h("header", { class: "bar fm-head" }, h("h2", {}, tc("Files")), filterBox, h("span")),
+        main.append(h("div", { class: "card" }, h("header", { class: "bar fm-head" }, h("h2", {}, tc("Files")), filterBox, viewSwitch()),
           h("div", { class: "body" }, h("div", { class: "fm-wrap" }, tree, box), foot, status, picker, dirPicker)));   // a red message goes below the footer line, not above the page
         busy = false; load();
       },
