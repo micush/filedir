@@ -4665,9 +4665,16 @@
       const jk = "upload:" + (++jobSeq);
       const cancel = () => { cancelled = true; ctl.abort(); setJob(jk, "Cancelling…"); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      const tell = () => { if (cancelled) return; setJob(jk, h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", stopBtn(cancel))); };
+      // one file: "Uploading name: 1.2 GB of 3.3 GB (36%)" and the stop; several: how many are done, and under it what each of the big ones going up now says
+      const tell = () => {
+        if (cancelled) return;
+        const lines = [...live.values()];
+        const first = total === 1 && lines.length === 1 ? "Uploading " + lines[0] : "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…");
+        setJob(jk, h("div", {}, h("span", {}, first, " ", stopBtn(cancel)), ...(total === 1 ? [] : lines.map((l) => h("div", { class: "muted" }, l)))));
+      };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
+        if (total === 1) { live.set(it, it.path + " (" + size(file.size) + ")"); tell(); }   // a single small file is gone before it could say more
         if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
         try {
           await apiUploadResumable(fo, p, file,

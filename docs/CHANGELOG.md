@@ -1,5 +1,10 @@
 # Changelog
 
+## [75] - 2026-11-24 — An upload says how far it is
+
+### Fixed
+- **An upload only said "Uploading 0 of 1…" until it was over.** The page had the figures of each big file going up (how much of it, in percent) and did not show them. A single file now reads "Uploading name: 1.2 GB of 3.3 GB (36%)" with the stop next to it; several files read "Uploading 3 of 40…" with a line for each big one going up now under it. A single small file shows its name and size.
+
 ## [74] - 2026-11-24 — Trash in the Disk space pies, with a red x to empty it
 
 ### Added
