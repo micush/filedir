@@ -30,9 +30,9 @@ type proxyCtxKey struct{}
 
 // proxyPrefixes are the API areas that can be driven on another node: all of
 // them except login, logout and the session, which belong to the node the
-// operator logged in to.
+// operator logged in to.  The Files page is the same on every node, except its trash, which is each node's own.
 var proxyPrefixes = []string{
-	"/api/logs", "/api/gateways", "/api/neighbors", "/api/canvas", "/api/assert-agc",
+	"/api/files/trash", "/api/logs", "/api/gateways", "/api/neighbors", "/api/canvas", "/api/assert-agc",
 	"/api/config", "/api/versions", "/api/tls", "/api/cluster", "/api/update", "/api/power", "/api/users", "/api/nodepause", "/api/noderename", "/api/bgp", "/api/ospf", "/api/dnsreg", "/api/snmp", "/api/lldp", "/api/log", "/api/mcpusage", "/api/scan", "/api/nettool", "/api/whois", "/api/dig", "/api/curl", "/api/portcheck", "/api/tlscheck", "/api/arp", "/api/wake", "/api/host", "/api/hostlookup", "/api/dnslookup", "/api/schedule", "/api/alerts", "/api/backup", "/api/capture", "/api/vmactest", "/api/tshoot/node",
 }
 
@@ -47,10 +47,12 @@ func proxyAllowed(method, rawPath string) error {
 		return errors.New("only /api/ paths can be relayed")
 	}
 	lower := strings.ToLower(rawPath)
+	pathPart, _, _ := strings.Cut(lower, "?")
 	if strings.Contains(rawPath, "..") || strings.Contains(rawPath, "\\") || strings.Contains(lower, "%2e") ||
-		strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.ContainsAny(rawPath, "\r\n\x00") {
+		strings.Contains(pathPart, "%2f") || strings.Contains(lower, "%5c") || strings.ContainsAny(rawPath, "\r\n\x00") {
 		return errors.New("path not allowed")
 	}
+	// an encoded slash in a value (a folder called "/") is not a path: only the path itself may not hide one
 	u, err := url.Parse(rawPath)
 	if err != nil || u.Host != "" || u.Scheme != "" || !strings.HasPrefix(u.Path, "/api/") {
 		return errors.New("path not allowed")

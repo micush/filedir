@@ -1,0 +1,22 @@
+package main
+
+import "testing"
+
+// The Files page is the same on every node, but a trash is each node's own: its calls can be relayed to the node the Node menu picked, the
+// rest of the Files API cannot.
+func TestProxyAllowsOnlyTheTrashOfFiles(t *testing.T) {
+	for _, p := range []string{"/api/files/trash?folder=%2F", "/api/files/trash/list?folder=x&when=&path=", "/api/files/trash/empty", "/api/files/trash/restore", "/api/files/trash/delete"} {
+		m := "GET"
+		if p == "/api/files/trash/empty" || p == "/api/files/trash/restore" || p == "/api/files/trash/delete" {
+			m = "POST"
+		}
+		if err := proxyAllowed(m, p); err != nil {
+			t.Errorf("%s %s: %v", m, p, err)
+		}
+	}
+	for _, p := range []string{"/api/files/list?folder=x", "/api/files/delete", "/api/files/trashy", "/api/files/upload"} {
+		if proxyAllowed("POST", p) == nil {
+			t.Errorf("%s was allowed", p)
+		}
+	}
+}

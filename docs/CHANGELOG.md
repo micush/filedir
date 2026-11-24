@@ -1,5 +1,10 @@
 # Changelog
 
+## [62] - 2026-11-24 — The trash of the node picked in the Node menu
+
+### Fixed
+- **The Files page showed the trash of the node you are signed in to, whichever node the Node menu had picked.** The files are the same on every node, so the page ignores the menu, but a trash is each node's own. Its calls (look, list, restore, delete for good, empty) are now sent to the picked node, and the page says whose trash it is. The rest of the Files API is still not relayed.
+
 ## [61] - 2026-11-24 — Disk space colours
 
 ### Fixed

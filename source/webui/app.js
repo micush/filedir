@@ -186,6 +186,7 @@
   // Everything follows the node picked in the top bar (relayed through the node
   // you are logged in to) except the login itself.  The picker's own list of
   // nodes is asked of the login node explicitly (api(..., true)).
+  const TRASH_API = /^\/api\/files\/trash(\/|\?|$)/;   // the exception: a trash is each node's own, so the Node menu picks whose
   const LOCAL_API = /^\/api\/(login|logout|session|proxy|tshoot\/download|files)(\/|\?|$)/;   // the files are the same on every node, and a transfer is made with the node signed in to: the Files page ignores the Node menu
   // The Node menu's "Cluster" entry: Monitor ▸ Node shows every node's numbers added together (the node you are logged in to
   // asks the others), and Monitor ▸ Capture captures on every node.  Only those pages offer it, and only their requests change;
@@ -210,7 +211,7 @@
       for (const [re, to] of CLUSTER_API) if (re.test(path)) return path.replace(/^\/api\/[a-z]+/, to);
       return path;
     }
-    if (!state.target || LOCAL_API.test(path)) return path;
+    if (!state.target || (LOCAL_API.test(path) && !TRASH_API.test(path))) return path;
     return "/api/proxy?node=" + encodeURIComponent(state.target) + "&path=" + encodeURIComponent(path);
   }
   async function api(method, path, body, local) {
@@ -4424,6 +4425,7 @@
     const tkey = (fo, p) => fo + "\n" + p;
     let treeRenaming = "";   // the tree node whose name is a text box now (by tkey)
     const leaf = new Set();   // folders known to hold no folder: no arrow
+    const whose = () => { const n = currentNode(); return n ? nodeLabel(n) : "this node"; };   // the node the Node menu picked: its trash is what the trash shows
     const trash = { on: false, folder: "", when: "", dir: "" };   // the trash node: the trash of one folder on this node, one level at a time (when: which deletion, dir: where in it)
     const ROOT = "/";   // the name of the root folder, when one is defined: the others are listed inside it
     const hasRoot = () => folders.some((f) => f.id === ROOT);
@@ -4789,7 +4791,7 @@
     const emptyTrash = async (fo) => {
       let t;
       try { t = (await api("GET", "/api/files/trash?folder=" + encodeURIComponent(fo))).data; } catch (e) { fail(status)(e); return; }
-      if (!t.files) { note("The trash of " + (fo === ROOT ? "the root folder" : fo) + " is empty on this node."); return; }
+      if (!t.files) { note("The trash of " + (fo === ROOT ? "the root folder" : fo) + " is empty on " + whose() + "."); return; }
       ask("Empty the trash?", "This node's trash of " + (fo === ROOT ? "the root folder" : fo) + " holds " + plural(t.files, "file", "files") + ", " + size(t.bytes) + ". They are deleted for good and cannot be got back. The other nodes keep their own trash.",
         { ok: "Empty trash", danger: true }, () => act(async () => { const r = (await api("POST", "/api/files/trash/empty", { folder: fo })).data; note("Freed " + size(r.bytes) + " (" + plural(r.files, "file", "files") + ")."); }));
     };
@@ -4942,7 +4944,7 @@
       const f = folders.find((x) => x.id === kept.folder), n = sel.size;
       const bytes = selected().reduce((a, e) => a + (e.kind === "file" ? e.size : 0), 0);
       foot.title = f ? (f.peers || []).filter((x) => x.error).map((x) => (x.name || x.node) + ": " + x.error).join("\n") : "";
-      clear(foot).append(...[...jobs.values()].map((n) => h("div", { class: "fm-job" }, n)), progress ? progress : jobs.size ? "" : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on this node: " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
+      clear(foot).append(...[...jobs.values()].map((n) => h("div", { class: "fm-job" }, n)), progress ? progress : jobs.size ? "" : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on " + whose() + ": " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
         : f ? f.files.toLocaleString() + " files, " + f.dirs.toLocaleString() + " folders, " + size(f.bytes) + " in this folder" +
           (f.conflicts ? "; " + f.conflicts + " conflict cop" + (f.conflicts === 1 ? "y" : "ies") : "") + (f.scanned ? "; scanned " + stamp(f.scanned) : "") + (f.error ? ". Problem: " + f.error : "") + ((f.peers || []).filter((x) => x.error).map((x) => ". Not syncing with " + (x.name || x.node) + ": " + whyShort(x.error)).join("")) : "");
     }
@@ -4971,7 +4973,7 @@
       const had = box.contains(document.activeElement);
       clear(box);
       if (!folders.length) box.append(h("div", { class: "empty" }, SITE === "files" ? "No folders are shared yet." : "No folders are set up. Add one under Configure ▸ Folders."));
-      else if (!entries.length && trash.on) box.append(h("div", { class: "empty" }, "The trash is empty on this node."));
+      else if (!entries.length && trash.on) box.append(h("div", { class: "empty" }, "The trash is empty on " + whose() + "."));
       else if (!entries.length && term.trim()) box.append(h("div", { class: "empty" }, "Nothing matches “" + term.trim() + "”."));
       else if (!entries.length) box.append(h("div", { class: "empty" }, "Nothing here yet." + (ro() ? "" : " Drop files or folders here, or right-click for the menu.")));
       else box.append(h("table", { class: "fm", role: "grid", "aria-multiselectable": "true" },
@@ -5025,7 +5027,7 @@
       for (const f of hasRoot() ? folders.filter((x) => x.id === ROOT) : folders) treeNode(f.id, "", f.id, 0, rows);   // with a root, the others hang under it
       if (SITE !== "files" && !ro() && folders.length) {   // at the very end: the trash of the open folder
         const fo = trash.on ? trash.folder : kept.folder;
-        rows.push(h("div", { class: "tn trashn" + (trash.on ? " cur" : ""), role: "treeitem", "aria-level": "1", "aria-selected": trash.on ? "true" : "false", tabindex: trash.on ? "0" : "-1", title: "The trash of " + (fo === ROOT ? "the root folder" : fo) + " on this node",
+        rows.push(h("div", { class: "tn trashn" + (trash.on ? " cur" : ""), role: "treeitem", "aria-level": "1", "aria-selected": trash.on ? "true" : "false", tabindex: trash.on ? "0" : "-1", title: "The trash of " + (fo === ROOT ? "the root folder" : fo) + " on " + whose(),
           onclick: () => goTrash(fo), oncontextmenu: (ev) => rowMenu([["Open", () => goTrash(fo)], ["Empty trash…", () => emptyTrash(fo)]])(ev),
           onkeydown: (ev) => { if (ev.key === "Enter") goTrash(fo); } },
           h("span", { class: "tw none", "aria-hidden": "true" }, "▸"), h("span", { class: "tl" }, "🗑 trash")));
