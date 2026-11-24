@@ -5214,7 +5214,7 @@
         for (const d of disks.values()) {
           const total = d.used + d.free; if (!total) continue;
           const mine = Math.min(d.mine, d.used), other = d.used - mine;
-          const parts = [["Synced folders", mine, "var(--accent)"], ["Other files", other, "var(--amber)"], ["Free", d.free, "var(--surface-2)"]];
+          const parts = [["Synced folders", mine, "var(--accent)", "k-mine"], ["Other files", other, "var(--amber)", "k-other"], ["Free", d.free, "var(--ok)", "k-free"]];
           const R = 60, C = 64;
           let a0 = -Math.PI / 2;
           const slices = parts.filter((x) => x[1] > 0).map(([name, v, col]) => {
@@ -5227,8 +5227,8 @@
           });
           const pct = (v) => (v * 100 / total).toFixed(v * 100 / total < 10 ? 1 : 0) + "%";
           const svg = sv("svg", { viewBox: "0 0 128 128", width: "128", height: "128", role: "img", "aria-label": "Disk of " + (n.name || n.node) + ": " + size(d.used) + " used of " + size(total) + ", " + size(d.free) + " free" }, ...slices);
-          const legend = h("table", { class: "fstat disk-legend" }, h("tbody", {}, parts.map(([name, v, col]) => h("tr", {},
-            h("td", {}, h("span", { class: "disk-key", style: "background:" + col }), " " + name), h("td", { class: "num" }, size(v)), h("td", { class: "num" }, pct(v))))));
+          const legend = h("table", { class: "fstat disk-legend" }, h("tbody", {}, parts.map(([name, v, col, cls]) => h("tr", {},
+            h("td", {}, h("span", { class: "disk-key " + cls }), " " + name), h("td", { class: "num" }, size(v)), h("td", { class: "num" }, pct(v))))));
           out.push(h("div", { class: "disk" }, svg, h("div", {}, h("div", { class: "disk-title" }, (n.name || n.node) + (d.ids.length ? ": " + d.ids.join(", ") : "")),
             h("div", { class: "muted" }, size(d.used) + " used of " + size(total)), legend)));
         }

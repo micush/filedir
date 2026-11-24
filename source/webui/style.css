@@ -985,6 +985,9 @@ table.fstat.repl th:first-child, table.fstat.repl td:first-child { width: 12rem;
 .disk { display: flex; gap: 1rem; align-items: center; }
 .disk svg { flex: none; }
 .disk-title { font-weight: 600; margin-bottom: .1rem; }
+.disk-key.k-mine { background: var(--accent); }
+.disk-key.k-other { background: var(--amber); }
+.disk-key.k-free { background: var(--ok); }
 .disk-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; border: 1px solid var(--border); vertical-align: -.1rem; }
 table.disk-legend { margin-top: .4rem; }
 table.disk-legend td { padding: .1rem .5rem .1rem 0; }

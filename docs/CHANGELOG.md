@@ -1,5 +1,11 @@
 # Changelog
 
+## [61] - 2026-11-24 — Disk space colours
+
+### Fixed
+- The colour boxes in the legend of the Disk space card were empty (the colour was set in an inline style, which the page does not apply); they are CSS classes now.
+- The Free slice is green instead of a dark grey that was hard to see in dark mode.
+
 ## [60] - 2026-11-24 — No Size column in the Files card
 
 ### Changed
