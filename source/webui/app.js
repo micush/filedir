@@ -4415,7 +4415,8 @@
     const sk = (e) => (e.folder != null ? e.folder + "/" : "") + e.path;   // a row's key: a match from another folder may share a path
     const fof = (e) => e.folder || kept.folder;
     let anchor = -1, cursor = -1;   // row numbers: where a Shift+click range starts, and the row the keyboard is on
-    const stopBtn = (fn) => h("button", { class: "stop", type: "button", title: "Cancel", "aria-label": "Cancel", onclick: fn }, "✕");   // a red x on the line of a transfer
+    // It acts when the pointer goes down, not when it comes up: a line that is drawn again while a transfer runs would take the click away.  Once only.
+    const stopBtn = (fn) => { let fired = false; const go = () => { if (!fired) { fired = true; fn(); } }; return h("button", { class: "stop", type: "button", title: "Cancel", "aria-label": "Cancel", onpointerdown: (e) => { if (e.button === 0) { e.preventDefault(); go(); } }, onclick: go }, "✕"); };   // a red x on the line of a transfer
     let jobSeq = 0;
     const jobs = new Map();         // the transfers that are running, each on a line of its own in the footer (key → what it says)
     const setJob = (k, node) => { jobs.set(k, node); drawFoot(); };
@@ -4663,14 +4664,25 @@
       let done = 0, failed = null, next = 0, cancelled = false;
       const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
       const jk = "upload:" + (++jobSeq);
-      const cancel = () => { cancelled = true; ctl.abort(); setJob(jk, "Cancelling…"); };
+      const cancel = () => { cancelled = true; ctl.abort(); clearTimeout(timer); setJob(jk, "Cancelling…"); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      // one file: "Uploading name: 1.2 GB of 3.3 GB (36%)" and the stop; several: how many are done, and under it what each of the big ones going up now says
-      const tell = () => {
+      // one file: "Uploading name: 1.2 GB of 3.3 GB (36%)" and the stop; several: how many are done, and under it what each of the big ones going up now says.
+      // The line and its stop are made once and only their text changes, and not more than four times a second: a stop that is made again
+      // after every one of thousands of small files is gone from under the pointer before the click is done, and the click does nothing.
+      const txt = h("span", {}), more = h("div", {}), box = h("div", {}, h("span", {}, txt, " ", stopBtn(cancel)), more);
+      let shown = false, last = 0, timer = null;
+      const paint = () => {
+        timer = null; last = Date.now();
         if (cancelled) return;
         const lines = [...live.values()];
-        const first = total === 1 && lines.length === 1 ? "Uploading " + lines[0] : "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…");
-        setJob(jk, h("div", {}, h("span", {}, first, " ", stopBtn(cancel)), ...(total === 1 ? [] : lines.map((l) => h("div", { class: "muted" }, l)))));
+        txt.textContent = total === 1 && lines.length === 1 ? "Uploading " + lines[0] : "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…");
+        more.replaceChildren(...(total === 1 ? [] : lines.map((l) => h("div", { class: "muted" }, l))));
+        if (!shown) { shown = true; setJob(jk, box); }
+      };
+      const tell = () => {
+        if (cancelled) return;
+        const wait = 250 - (Date.now() - last);
+        if (!shown || wait <= 0) paint(); else if (!timer) timer = setTimeout(paint, wait);
       };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;

@@ -1,5 +1,11 @@
 # Changelog
 
+## [90]
+- The red ✕ of an upload, a fetch from a web address, and a copy or move cancels when the pointer goes down, not when the button comes up, and only once (the keyboard still works through the click). A line redrawn while a transfer runs could take the click away, and the count went on. Reported on an upload of 78,346 files: pressing ✕ did nothing.
+
+## [89]
+- The red ✕ on the line of an upload cancels the whole upload again when it is a big one. With thousands of small files the line was made anew after every file, so the ✕ was gone from under the pointer between pressing and letting go of the mouse button and the click did nothing (or was lost with the file that happened to end then). The line and its ✕ are now made once, and only its text changes, at most four times a second. (A click on it stops what is going up and starts nothing more, as before.)
+
 ## [88]
 - The speed test is its own card on the Files status page, titled "Speed test": pick the node that sends and the node that receives, press Test, and the result is shown as a headline speed, what limits it (the channel, the hash or the disk) and a bar for each part and for the whole path. The test is run on the receiving node and asks only the node picked as the sender.
 
