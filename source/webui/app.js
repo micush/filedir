@@ -5313,37 +5313,75 @@
       }
       return out;
     }
-    // Speed test of the node the Node menu has picked (this one when none is): that node as the receiver, against each other node with
-    // nothing else in the way, and how fast it hashes and writes.  The result is kept for the node it was made on.
-    let speed, speedRes = null, speedBusy = false;
+    // Speed test: one node sends and another receives (and does the work): the data over the file channel with nothing else in the way,
+    // how fast the receiver hashes and writes, and all of it together as a replication does it.  The test is run on the receiver.
+    let speed, speedCard, speedRes = null, speedBusy = false, speedFrom = null, speedTo = null, speedKey = "";
     const targetId = () => { const m = state.target ? state.nodes.find((n) => n.addr === state.target) : state.nodes.find((n) => n.self); return m ? m.node_id : null; };
     function drawSpeed() {
-      const nameOf = (id) => { const n = shownNodes.find((x) => x.node === id); return n ? n.name || n.node : id || "this node"; };
-      const mbps = (v) => Math.round(v).toLocaleString() + " Mbps";
-      const mbs = (v) => Math.round(v).toLocaleString() + " MB/s";
-      const ro = !!(state.session && state.session.read_only), tid = targetId(), me = nameOf(tid);
-      const lines = [];
-      if (speedRes && speedRes.for === tid) {
-        if (speedRes.error) lines.push(speedRes.error);
-        else {
-          for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + " to " + me + ": " + (p.error ? p.error : mbps(p.mbit) + " over the channel, " + (p.full_error ? p.full_error : mbps(p.full_mbit) + " with the hash and the disk")));
-          lines.push("Hashing on " + me + ", one core: BLAKE3 " + mbs(speedRes.hash.blake3_mbs) + ", SHA-256 " + mbs(speedRes.hash.sha256_mbs));
-          lines.push(speedRes.disk.error ? "Disk of " + me + ": " + speedRes.disk.error : "Disk write on " + me + " (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
-        }
-      }
-      const tip = "Measures " + me + " as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast " + me + " hashes and writes. It moves about half a gigabyte from each node over the channel, and writes two gigabytes for the whole path.";
-      const run = async (e) => {
-        e.preventDefault();
-        if (speedBusy) return;
-        const forId = tid;
-        speedBusy = true; drawSpeed();
-        try { speedRes = { for: forId, ...(await api("POST", "/api/files/speedtest", { mb: 512 })).data }; } catch (err) { speedRes = { for: forId, error: err.message }; }
+      const nodes = shownNodes, ids = nodes.map((n) => n.node);
+      speedCard.hidden = nodes.length < 2 || !nodes.some((n) => n.folders.length);
+      if (speedCard.hidden) return;
+      const nameOf = (id) => { const n = nodes.find((x) => x.node === id); return n ? n.name || n.node : id || "this node"; };
+      if (!ids.includes(speedTo)) speedTo = ids.includes(targetId()) ? targetId() : ids[0];
+      if (!ids.includes(speedFrom) || speedFrom === speedTo) speedFrom = ids.find((i) => i !== speedTo);
+      const ro = !!(state.session && state.session.read_only);
+      const NS = "http://www.w3.org/2000/svg";
+      const bar = (frac, cls) => {
+        const sv = document.createElementNS(NS, "svg"), r = document.createElementNS(NS, "rect");
+        for (const [k, v] of Object.entries({ class: "sp-bar", viewBox: "0 0 100 1", preserveAspectRatio: "none", "aria-hidden": "true" })) sv.setAttribute(k, v);
+        for (const [k, v] of Object.entries({ width: Math.max(frac * 100, 1), height: 1, class: cls })) r.setAttribute(k, v);
+        sv.append(r); return sv;
+      };
+      const num = (v) => Math.round(v).toLocaleString();
+      const rate = (v) => v >= 1000 ? [(v / 1000).toFixed(2), "Gbps"] : [num(v), "Mbps"];
+      const pick = (label, val, set) => h("div", { class: "sp-pick" }, h("label", {}, label),
+        h("select", { disabled: speedBusy, onchange: (e) => { set(e.target.value); drawSpeed(); } }, nodes.map((n) => h("option", { value: n.node, selected: n.node === val }, nameOf(n.node)))));
+      const run = async () => {
+        if (speedBusy || speedFrom === speedTo) return;
+        const from = speedFrom, to = speedTo, t0 = Date.now(), dst = state.nodes.find((n) => n.node_id === to), path = "/api/files/speedtest";
+        const url = !dst || dst.self ? path : "/api/proxy?node=" + encodeURIComponent(dst.addr) + "&path=" + encodeURIComponent(path);
+        speedBusy = true; speedRes = null; drawSpeed();
+        try { speedRes = { from, to, ...(await api("POST", url, { mb: 512, from }, true)).data }; } catch (err) { speedRes = { from, to, error: err.message }; }
+        speedRes.secs = (Date.now() - t0) / 1000; speedRes.at = new Date();
         speedBusy = false; drawSpeed();
       };
-      speed.replaceChildren(
-        speedBusy || ro ? h("span", { class: "muted", title: ro ? "A read-only account cannot run the test" : tip }, speedBusy ? "Testing " + me + "…" : "Test speed")
-          : h("a", { href: "#", title: tip, onclick: run }, "Test speed of " + me),
-        ...lines.map((t) => h("div", { class: "muted speedline" }, t)));
+      const swap = () => { if (speedBusy) return; [speedFrom, speedTo] = [speedTo, speedFrom]; drawSpeed(); };
+      const tip = "Sends data from the first node to the second, which hashes it and writes it to its disk as a replication does. About half a gigabyte goes over the channel alone, then two gigabytes the whole way.";
+      const controls = h("div", { class: "sp-controls" },
+        pick("From (sends)", speedFrom, (v) => { speedFrom = v; if (v === speedTo) speedTo = ids.find((i) => i !== v); }),
+        h("button", { type: "button", class: "btn sp-swap", "aria-label": "Swap the two nodes", title: "Swap the two nodes", disabled: speedBusy, onclick: swap }, "⇄"),
+        pick("To (receives, and does the work)", speedTo, (v) => { speedTo = v; if (v === speedFrom) speedFrom = ids.find((i) => i !== v); }),
+        h("button", { type: "button", class: "btn primary sp-go", title: ro ? "A read-only account cannot run the test" : tip, disabled: speedBusy || ro, onclick: run }, speedBusy ? "Testing…" : "Test"));
+      const out = [controls];
+      const r = speedRes && speedRes.from === speedFrom && speedRes.to === speedTo ? speedRes : null;
+      const p = r && r.peers && r.peers[0];
+      if (speedBusy) out.push(h("div", { class: "muted sp-note", role: "status" }, "Testing " + nameOf(speedFrom) + " to " + nameOf(speedTo) + ": a few seconds over the channel, then about two gigabytes the whole way."));
+      else if (r && (r.error || !p || p.error)) out.push(h("div", { class: "notice bad" }, r.error || (p && p.error) || "No answer from " + nameOf(speedFrom)));
+      else if (r) {
+        const to = nameOf(r.to), from = nameOf(r.from);
+        const ch = p.mbit, hs = r.hash.blake3_mbs * 8, dk = r.disk.error ? 0 : r.disk.write_mbs * 8, all = p.full_error ? 0 : p.full_mbit;
+        const stages = [["channel", ch], ["hash", hs], ["disk", dk]].filter((x) => x[1] > 0);
+        const limit = stages.slice().sort((x, y) => x[1] - y[1])[0][0];
+        const max = Math.max(ch, hs, dk, all, 1), [hv, hu] = rate(all || ch);
+        let title, body;
+        if (limit === "disk") { title = "The disk on " + to + " is the limit"; body = "It takes " + num(r.disk.write_mbs) + " MB/s once its memory is full." + (ch >= dk * 1.5 ? " The network could carry " + (ch / dk).toFixed(1) + " times that." : ""); }
+        else if (limit === "hash") { title = "The hash on " + to + " is the limit"; body = "One core hashes " + num(r.hash.blake3_mbs) + " MB/s. A replication uses every core, so it may do better."; }
+        else { title = "The network between " + from + " and " + to + " is the limit"; body = "Data crosses it at " + num(ch) + " Mbps with nothing else in the way."; }
+        const row = (name, v, unit, cls, note, tag) => h("div", { class: "sp-row" },
+          h("div", { class: "sp-head" }, h("span", { class: "sp-name" }, name, tag ? h("span", { class: "sp-tag" }, "Limit") : null), h("span", {}, h("b", { class: tag ? "sp-warn" : "" }, num(v)), " ", h("span", { class: "muted" }, unit))),
+          bar(v / max, cls), h("div", { class: "muted sp-sub" }, note));
+        out.push(h("div", { class: "sp-top" },
+          h("div", {}, h("div", { class: "muted" }, p.full_error ? "Over the channel, " + from + " to " + to : "Whole path, " + from + " to " + to), h("div", { class: "sp-big" }, hv, h("span", { class: "muted" }, " " + hu))),
+          h("div", { class: "sp-limit" }, h("div", { class: "sp-lt" }, title), h("div", {}, body))));
+        out.push(h("div", { class: "sp-rows" },
+          row("Channel", ch, "Mbps", "sp-ch", "Signed and encrypted, 16 streams, nothing written or checked.", limit === "channel"),
+          row("Hash", hs, "Mbps (" + num(r.hash.blake3_mbs) + " MB/s)", "sp-hs", "BLAKE3 on one core of " + to + ". SHA-256 would give " + num(r.hash.sha256_mbs) + " MB/s.", limit === "hash"),
+          r.disk.error ? h("div", { class: "notice bad" }, "Disk of " + to + ": " + r.disk.error)
+            : row("Disk write", dk, "Mbps (" + num(r.disk.write_mbs) + " MB/s)", "sp-dk", "Written to " + r.disk.folder + " on " + to + " and synced to the disk.", limit === "disk"),
+          p.full_error ? h("div", { class: "notice bad" }, "The whole path: " + p.full_error) : h("div", { class: "sp-all" }, row("All of it together", all, "Mbps", "sp-all", "Channel, hash and disk at once, as a replication does it."))));
+        out.push(h("div", { class: "muted sp-foot" }, h("span", {}, "Took " + Math.round(r.secs) + " s"), h("span", {}, "Tested " + r.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))));
+      }
+      speed.replaceChildren(...out);
     }
     function diskPies(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
@@ -5386,7 +5424,8 @@
       const nodeName = (x) => x.name || x.node;   // every card lists the nodes by name
       const nodes = (r.nodes || []).slice().sort((x, y) => nodeName(x).localeCompare(nodeName(y), undefined, { numeric: true, sensitivity: "base" }));
       shownNodes = nodes;
-      drawSpeed();
+      const key = nodes.map((n) => n.node + (n.name || "") + n.folders.length).join("|");
+      if (key !== speedKey) { speedKey = key; drawSpeed(); }   // not every poll: a menu that is open would close
       const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
       else {
@@ -5412,7 +5451,7 @@
       try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); const sx = [...box.querySelectorAll(".scroll")].map((el) => el.scrollLeft); draw(r); box.querySelectorAll(".scroll").forEach((el, i) => { el.scrollLeft = sx[i] || 0; }); } } catch (e) { fail(status)(e); }   // the page is redrawn every few seconds: a table that was scrolled stays where it was
     }
     return {
-      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep, speed); drawSpeed(); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard); load(); },
+      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep); speedCard = section("Speed test", speed); speedCard.hidden = true; repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard, speedCard); load(); },
       async poll() { await load(); },
       poll_ms: 5000,
     };

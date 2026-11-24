@@ -1,5 +1,11 @@
 # Changelog
 
+## [88]
+- The speed test is its own card on the Files status page, titled "Speed test": pick the node that sends and the node that receives, press Test, and the result is shown as a headline speed, what limits it (the channel, the hash or the disk) and a bar for each part and for the whole path. The test is run on the receiving node and asks only the node picked as the sender.
+
+## [87]
+- Fixed the speed test's whole-path run, which failed with "unexpected EOF" on every node: it asked for 128 MB in one request and a response is read only to 33 MB. A stream's share now comes as requests of 32 MB. Replication was not affected (its blocks are 16 MB at most).
+
 ## [86]
 - Test speed writes 2 GB for the whole path (and for the disk line), not 512 MB: with a node's memory of a few GB, a small write is taken by the cache and the disk is never asked to keep up, which a big file's replication meets. On two nodes the whole path (hash and disk) of 512 MB went as fast as the channel (5.2 against 5.4 Gbit/s) while the disk alone, synced, wrote 260-450 MB/s, which is where the replications of big files stopped. It needs room for twice the 2 GB, and leaves a node out of the test when 60 s have gone (a relayed request is cut off at 90 s).
 

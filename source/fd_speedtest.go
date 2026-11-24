@@ -37,6 +37,9 @@ var (
 // fdSpeedBlock is the size of a block the full test checks and writes, as a replication does.
 const fdSpeedBlock = 4 << 20
 
+// fdSpeedPiece is the most megabytes asked for in one request (the reader of a response stops at 33).
+const fdSpeedPiece = 32
+
 var fdSpeedSum [32]byte // the hash of a block of the test data
 
 // fdSpeedData is a megabyte of bytes that look random (compression would make a fool of a test of zeros), the same on every node, that
@@ -105,8 +108,8 @@ type fdSpeedResult struct {
 	} `json:"disk"`
 }
 
-// speedTest runs the test on this node: mb megabytes from each other node, then the hash and the disk.
-func (s *fdService) speedTest(ctx context.Context, mb int) fdSpeedResult {
+// speedTest runs the test on this node: mb megabytes from each other node (or only from the one named in from), then the hash and the disk.
+func (s *fdService) speedTest(ctx context.Context, mb int, from string) fdSpeedResult {
 	var res fdSpeedResult
 	res.Peers = []fdSpeedPeer{}
 	if mb < fdSpeedStreams {
@@ -117,7 +120,20 @@ func (s *fdService) speedTest(ctx context.Context, mb int) fdSpeedResult {
 	full := mb * 4
 	dir, room := s.speedDir()
 	deadline := time.Now().Add(fdSpeedBudget)
-	for _, p := range s.otherPeers() {
+	peers := s.otherPeers()
+	if from != "" {
+		var one []ClusterPeer
+		for _, p := range peers {
+			if p.NodeID == from {
+				one = append(one, p)
+			}
+		}
+		if len(one) == 0 {
+			res.Peers = append(res.Peers, fdSpeedPeer{Node: from, Error: "that node is not one this node can reach"})
+		}
+		peers = one
+	}
+	for _, p := range peers {
 		if ctx.Err() != nil {
 			break
 		}
@@ -165,7 +181,7 @@ func (s *fdService) speedDir() (string, uint64) {
 // with every block of 4 MB: checks its hash and writes it to a file there, which it makes sure is on the disk at the end.  It returns
 // the rate in Mbit/s, or why not.
 func (s *fdService) speedPull(ctx context.Context, p ClusterPeer, mb int, sink *string) (float64, string) {
-	per := mb / fdSpeedStreams / 4 * 4 // megabytes for a request: whole blocks
+	per := mb / fdSpeedStreams / 4 * 4 // megabytes for a stream: whole blocks
 	if per < 4 {
 		per = 4
 	}
@@ -195,29 +211,34 @@ func (s *fdService) speedPull(ctx context.Context, p ClusterPeer, mb int, sink *
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			body, _ := json.Marshal(fdSpeedReq{MB: per})
-			err := s.mg.cl.callFiles(ctx, p, "/cluster/files/speed", body, func(rd io.Reader) error {
-				if fh == nil {
-					n, err := io.Copy(io.Discard, rd)
-					got.Add(n)
-					return err
-				}
-				buf := make([]byte, fdSpeedBlock)
-				off := int64(i) * int64(per) << 20
-				for done := 0; done < per<<20; done += fdSpeedBlock {
-					if _, err := io.ReadFull(rd, buf); err != nil {
+			// a response is read to 32 MB at most, so a stream's share comes as requests of that size
+			var err error
+			for left := per; left > 0 && err == nil; left -= fdSpeedPiece {
+				piece := min(left, fdSpeedPiece)
+				body, _ := json.Marshal(fdSpeedReq{MB: piece})
+				base := int64(i)*int64(per)<<20 + int64(per-left)<<20
+				err = s.mg.cl.callFiles(ctx, p, "/cluster/files/speed", body, func(rd io.Reader) error {
+					if fh == nil {
+						n, err := io.Copy(io.Discard, rd)
+						got.Add(n)
 						return err
 					}
-					if blake3.Sum256(buf) != fdSpeedSum {
-						return errors.New("the data that came is not what was sent")
+					buf := make([]byte, fdSpeedBlock)
+					for done := 0; done < piece<<20; done += fdSpeedBlock {
+						if _, err := io.ReadFull(rd, buf); err != nil {
+							return err
+						}
+						if blake3.Sum256(buf) != fdSpeedSum {
+							return errors.New("the data that came is not what was sent")
+						}
+						if _, err := fh.WriteAt(buf, base+int64(done)); err != nil {
+							return err
+						}
+						got.Add(fdSpeedBlock)
 					}
-					if _, err := fh.WriteAt(buf, off+int64(done)); err != nil {
-						return err
-					}
-					got.Add(fdSpeedBlock)
-				}
-				return nil
-			}, 2*time.Minute)
+					return nil
+				}, 2*time.Minute)
+			}
 			if err != nil {
 				fail(err.Error())
 			}
@@ -302,7 +323,8 @@ func (s *fdService) speedDisk(res *fdSpeedResult, mb int) {
 // handleFilesSpeedTest runs the test on this node.  It sends and receives a lot, so it is for a person to start.
 func (w *WebServer) handleFilesSpeedTest(rw http.ResponseWriter, r *http.Request, s *session) {
 	var in struct {
-		MB int `json:"mb"`
+		MB   int    `json:"mb"`
+		From string `json:"from"`
 	}
 	json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&in)
 	if in.MB <= 0 {
@@ -320,8 +342,8 @@ func (w *WebServer) handleFilesSpeedTest(rw http.ResponseWriter, r *http.Request
 		return
 	}
 	defer fdSpeedBusy.Store(false)
-	fdAudit(s, "files: speed test (%d MB from each node)", in.MB)
-	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": fdSvc.speedTest(r.Context(), in.MB)})
+	fdAudit(s, "files: speed test (%d MB from %s)", in.MB, map[bool]string{true: "each node", false: in.From}[in.From == ""])
+	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": fdSvc.speedTest(r.Context(), in.MB, in.From)})
 }
 
 var fdSpeedBusy atomic.Bool

@@ -150,7 +150,7 @@ func TestSpeedTestMeasuresThePeerTheHashAndTheDisk(t *testing.T) {
 	b.join(a.tnode)
 	a.sync()
 	b.sync()
-	res := b.svc.speedTest(t.Context(), 64)
+	res := b.svc.speedTest(t.Context(), 256, "")
 	if len(res.Peers) != 1 || res.Peers[0].Error != "" || res.Peers[0].Mbit <= 0 || res.Peers[0].FullErr != "" || res.Peers[0].Full <= 0 {
 		t.Fatalf("peers: %+v", res.Peers)
 	}
@@ -160,7 +160,11 @@ func TestSpeedTestMeasuresThePeerTheHashAndTheDisk(t *testing.T) {
 	if res.Disk.Error != "" || res.Disk.Write <= 0 {
 		t.Fatalf("disk: %+v", res.Disk)
 	}
-	t.Logf("64 MB from the peer at %.0f Mbit/s over the channel, %.0f Mbit/s with hash and disk; BLAKE3 %.0f MB/s, SHA-256 %.0f MB/s; disk %.0f MB/s", res.Peers[0].Mbit, res.Peers[0].Full, res.Hash.Blake3, res.Hash.SHA256, res.Disk.Write)
+	t.Logf("256 MB from the peer at %.0f Mbit/s over the channel, %.0f Mbit/s with hash and disk; BLAKE3 %.0f MB/s, SHA-256 %.0f MB/s; disk %.0f MB/s", res.Peers[0].Mbit, res.Peers[0].Full, res.Hash.Blake3, res.Hash.SHA256, res.Disk.Write)
+	// asked to test from a node that is not there, it says so and moves nothing
+	if res := b.svc.speedTest(t.Context(), 16, "nobody"); len(res.Peers) != 1 || res.Peers[0].Error == "" || res.Peers[0].Mbit != 0 {
+		t.Fatalf("from an unknown node: %+v", res.Peers)
+	}
 	if left, _ := filepath.Glob(filepath.Join(b.root, ".filedir", "tmp", "speedtest-*")); len(left) != 0 {
 		t.Fatalf("the test left files behind: %v", left)
 	}
