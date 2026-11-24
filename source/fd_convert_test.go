@@ -151,7 +151,7 @@ func TestSpeedTestMeasuresThePeerTheHashAndTheDisk(t *testing.T) {
 	a.sync()
 	b.sync()
 	res := b.svc.speedTest(t.Context(), 64)
-	if len(res.Peers) != 1 || res.Peers[0].Error != "" || res.Peers[0].Mbit <= 0 {
+	if len(res.Peers) != 1 || res.Peers[0].Error != "" || res.Peers[0].Mbit <= 0 || res.Peers[0].FullErr != "" || res.Peers[0].Full <= 0 {
 		t.Fatalf("peers: %+v", res.Peers)
 	}
 	if res.Hash.Blake3 <= 0 || res.Hash.SHA256 <= 0 {
@@ -160,7 +160,7 @@ func TestSpeedTestMeasuresThePeerTheHashAndTheDisk(t *testing.T) {
 	if res.Disk.Error != "" || res.Disk.Write <= 0 {
 		t.Fatalf("disk: %+v", res.Disk)
 	}
-	t.Logf("64 MB from the peer at %.0f Mbit/s; BLAKE3 %.0f MB/s, SHA-256 %.0f MB/s; disk %.0f MB/s", res.Peers[0].Mbit, res.Hash.Blake3, res.Hash.SHA256, res.Disk.Write)
+	t.Logf("64 MB from the peer at %.0f Mbit/s over the channel, %.0f Mbit/s with hash and disk; BLAKE3 %.0f MB/s, SHA-256 %.0f MB/s; disk %.0f MB/s", res.Peers[0].Mbit, res.Peers[0].Full, res.Hash.Blake3, res.Hash.SHA256, res.Disk.Write)
 	if left, _ := filepath.Glob(filepath.Join(b.root, ".filedir", "tmp", "speedtest-*")); len(left) != 0 {
 		t.Fatalf("the test left files behind: %v", left)
 	}

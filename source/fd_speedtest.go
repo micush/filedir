@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -32,11 +33,31 @@ var (
 	fdSpeedBuf  []byte
 )
 
-// fdSpeedData is a megabyte of random bytes that the test sends over and over (compression would make a fool of a test of zeros).
+// fdSpeedBlock is the size of a block the full test checks and writes, as a replication does.
+const fdSpeedBlock = 4 << 20
+
+var fdSpeedSum [32]byte // the hash of a block of the test data
+
+// fdSpeedData is a megabyte of bytes that look random (compression would make a fool of a test of zeros), the same on every node, that
+// the test sends over and over: the receiver can tell that what came is right.
 func fdSpeedData() []byte {
 	fdSpeedOnce.Do(func() {
 		fdSpeedBuf = make([]byte, 1<<20)
-		rand.Read(fdSpeedBuf)
+		x := uint64(0x9E3779B97F4A7C15)
+		for i := 0; i+8 <= len(fdSpeedBuf); i += 8 { // xorshift64*
+			x ^= x >> 12
+			x ^= x << 25
+			x ^= x >> 27
+			v := x * 0x2545F4914F6CDD1D
+			for k := 0; k < 8; k++ {
+				fdSpeedBuf[i+k] = byte(v >> (8 * k))
+			}
+		}
+		blk := make([]byte, 0, fdSpeedBlock)
+		for len(blk) < fdSpeedBlock {
+			blk = append(blk, fdSpeedBuf...)
+		}
+		fdSpeedSum = blake3.Sum256(blk[:fdSpeedBlock])
 	})
 	return fdSpeedBuf
 }
@@ -62,11 +83,12 @@ func (c *Cluster) handleFilesSpeed(rw http.ResponseWriter, r *http.Request, call
 }
 
 type fdSpeedPeer struct {
-	Node  string  `json:"node"`
-	Addr  string  `json:"addr"`
-	Mbit  float64 `json:"mbit,omitempty"`
-	Secs  float64 `json:"secs,omitempty"`
-	Error string  `json:"error,omitempty"`
+	Node    string  `json:"node"`
+	Addr    string  `json:"addr"`
+	Mbit    float64 `json:"mbit,omitempty"`      // the channel alone
+	Full    float64 `json:"full_mbit,omitempty"` // the whole path: the channel, the hash of every block, the write to disk, synced
+	FullErr string  `json:"full_error,omitempty"`
+	Error   string  `json:"error,omitempty"`
 }
 
 type fdSpeedResult struct {
@@ -89,45 +111,122 @@ func (s *fdService) speedTest(ctx context.Context, mb int) fdSpeedResult {
 	if mb < fdSpeedStreams {
 		mb = fdSpeedStreams
 	}
+	dir, room := s.speedDir()
 	for _, p := range s.otherPeers() {
 		if ctx.Err() != nil {
 			break
 		}
 		sp := fdSpeedPeer{Node: p.NodeID, Addr: p.Addr}
-		per := mb / fdSpeedStreams
-		var got atomic.Int64
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		t0 := time.Now()
-		for i := 0; i < fdSpeedStreams; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				body, _ := json.Marshal(fdSpeedReq{MB: per})
-				err := s.mg.cl.callFiles(ctx, p, "/cluster/files/speed", body, func(rd io.Reader) error {
-					n, err := io.Copy(io.Discard, rd)
-					got.Add(n)
-					return err
-				}, 2*time.Minute)
-				if err != nil {
-					mu.Lock()
-					if sp.Error == "" {
-						sp.Error = err.Error()
-					}
-					mu.Unlock()
-				}
-			}()
-		}
-		wg.Wait()
-		sp.Secs = time.Since(t0).Seconds()
-		if sp.Error == "" && sp.Secs > 0 {
-			sp.Mbit = float64(got.Load()) * 8 / 1e6 / sp.Secs
+		sp.Mbit, sp.Error = s.speedPull(ctx, p, mb, nil)
+		if sp.Error == "" {
+			if dir == "" {
+				sp.FullErr = "no folder is open here"
+			} else if room < uint64(mb)<<20*4 {
+				sp.FullErr = "not enough room to test"
+			} else {
+				sp.Full, sp.FullErr = s.speedPull(ctx, p, mb, &dir)
+			}
 		}
 		res.Peers = append(res.Peers, sp)
 	}
 	res.Hash.Blake3, res.Hash.SHA256 = fdSpeedHash()
 	s.speedDisk(&res, mb)
 	return res
+}
+
+// speedDir is a directory to write in, the folder's own, and the room there is on its disk.
+func (s *fdService) speedDir() (string, uint64) {
+	for _, f := range s.list() {
+		if f.f == nil {
+			continue
+		}
+		dir := filepath.Join(f.cfg.Path, filesync.MetaDir, "tmp")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			continue
+		}
+		if _, avail, _, err := filesync.DiskSpace(dir); err == nil {
+			return dir, avail
+		}
+	}
+	return "", 0
+}
+
+// speedPull fetches about mb megabytes from a node, as 16 requests at once.  With a directory (sink) it does what a replication does
+// with every block of 4 MB: checks its hash and writes it to a file there, which it makes sure is on the disk at the end.  It returns
+// the rate in Mbit/s, or why not.
+func (s *fdService) speedPull(ctx context.Context, p ClusterPeer, mb int, sink *string) (float64, string) {
+	per := mb / fdSpeedStreams / 4 * 4 // megabytes for a request: whole blocks
+	if per < 4 {
+		per = 4
+	}
+	fdSpeedData()
+	var fh *os.File
+	if sink != nil {
+		var err error
+		if fh, err = os.CreateTemp(*sink, "speedtest-"); err != nil {
+			return 0, err.Error()
+		}
+		defer os.Remove(fh.Name())
+		defer fh.Close()
+	}
+	var got atomic.Int64
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var first string
+	fail := func(e string) {
+		mu.Lock()
+		if first == "" {
+			first = e
+		}
+		mu.Unlock()
+	}
+	t0 := time.Now()
+	for i := 0; i < fdSpeedStreams; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, _ := json.Marshal(fdSpeedReq{MB: per})
+			err := s.mg.cl.callFiles(ctx, p, "/cluster/files/speed", body, func(rd io.Reader) error {
+				if fh == nil {
+					n, err := io.Copy(io.Discard, rd)
+					got.Add(n)
+					return err
+				}
+				buf := make([]byte, fdSpeedBlock)
+				off := int64(i) * int64(per) << 20
+				for done := 0; done < per<<20; done += fdSpeedBlock {
+					if _, err := io.ReadFull(rd, buf); err != nil {
+						return err
+					}
+					if blake3.Sum256(buf) != fdSpeedSum {
+						return errors.New("the data that came is not what was sent")
+					}
+					if _, err := fh.WriteAt(buf, off+int64(done)); err != nil {
+						return err
+					}
+					got.Add(fdSpeedBlock)
+				}
+				return nil
+			}, 2*time.Minute)
+			if err != nil {
+				fail(err.Error())
+			}
+		}(i)
+	}
+	wg.Wait()
+	if first == "" && fh != nil {
+		if err := fh.Sync(); err != nil {
+			first = err.Error()
+		}
+	}
+	secs := time.Since(t0).Seconds()
+	if first != "" {
+		return 0, first
+	}
+	if secs <= 0 {
+		return 0, "no time passed"
+	}
+	return float64(got.Load()) * 8 / 1e6 / secs, ""
 }
 
 // fdSpeedHash is how fast one core hashes blocks of 4 MB, with the hash that is used (BLAKE3) and with SHA-256, in MB a second.

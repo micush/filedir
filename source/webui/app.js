@@ -5326,7 +5326,7 @@
       if (speedRes && speedRes.for === tid) {
         if (speedRes.error) lines.push(speedRes.error);
         else {
-          for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + " to " + me + ": " + (p.error ? p.error : mbps(p.mbit)));
+          for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + " to " + me + ": " + (p.error ? p.error : mbps(p.mbit) + " over the channel, " + (p.full_error ? p.full_error : mbps(p.full_mbit) + " with the hash and the disk")));
           lines.push("Hashing on " + me + ", one core: BLAKE3 " + mbs(speedRes.hash.blake3_mbs) + ", SHA-256 " + mbs(speedRes.hash.sha256_mbs));
           lines.push(speedRes.disk.error ? "Disk of " + me + ": " + speedRes.disk.error : "Disk write on " + me + " (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
         }

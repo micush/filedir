@@ -1,5 +1,8 @@
 # Changelog
 
+## [85]
+- Test speed measures the whole path for each other node, as well as the channel alone: it fetches the data again as a replication does, with every block of 4 MB checked against its hash (BLAKE3) and written to a file in the first folder's own directory, which is synced at the end and removed. The line for a node reads "From A to B: 6,181 Mbps over the channel, 3,100 Mbps with the hash and the disk". The data is now the same on every node (made from a fixed seed), so the receiver can check it; a block that comes wrong is reported. A node with less than four times the test's size of room on its disk skips the second part and says so. This and the other numbers vary a good deal from run to run on hosts that are shared (BLAKE3 on one node went 874, then 290 MB/s), so run it a few times.
+
 ## [84]
 - Test speed is a link, not a button, and follows the Node menu: it tests the node that is picked (this one when none is), asking it through the relay like the trash, and says which node each line is about ("From filedir2 to filedir1", "Hashing on filedir1"). The result is kept for the node it was made on and shown only when that node is the picked one. `/api/files/speedtest` may be relayed (proxy.go, and the test of what may be).
 
