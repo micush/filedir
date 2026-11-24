@@ -270,7 +270,7 @@
     let id = null, off = 0, tries = 0;
     for (;;) {
       try {
-        if (!id) { const d = (await api("POST", "/api/files/upload/begin", { folder: fo, path, size: file.size })).data; id = d.id; off = d.offset; }
+        if (!id) { const d = (await api("POST", "/api/files/upload/begin", { folder: fo, path, size: file.size })).data; if (d.skipped) return d; id = d.id; off = d.offset; }
         while (off < file.size) {
           const wt = withTimeout(signal, UPLOAD_QUIET);
           let res, data = null;
@@ -4671,7 +4671,7 @@
     async function upload(items, base, fo = kept.folder) {
       if (!items.length) return;
       const total = items.length;
-      let done = 0, failed = null, next = 0, cancelled = false;
+      let done = 0, skipped = 0, failed = null, next = 0, cancelled = false;
       const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
       const jk = "upload:" + (++jobSeq);
       const cancel = () => { cancelled = true; ctl.abort(); clearTimeout(timer); clearInterval(ticker); setJob(jk, "Cancelling…"); };
@@ -4703,12 +4703,13 @@
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
         if (total === 1) { live.set(it, it.path + " (" + size(file.size) + ")"); tell(); }   // a single small file is gone before it could say more
-        if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
+        if (file.size < UPLOAD_RESUME_MIN) { const r = await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); if (r && r.data && r.data.skipped) skipped++; live.delete(it); return; }
         await takeBig();   // twelve small files at once are fine; twelve big ones would fight over the disk and the line
         try {
-          await apiUploadResumable(fo, p, file,
+          const r = await apiUploadResumable(fo, p, file,
             (n, tot) => { live.set(it, it.path + ": " + size(n) + " of " + size(tot) + " (" + Math.floor((n * 100) / tot) + "%)"); tell(); },
             (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal);
+          if (r && r.skipped) skipped++;
         } finally { live.delete(it); freeBig(); }
       };
       tell();
@@ -4717,7 +4718,7 @@
           const it = items[next++];
           started.set(it, Date.now());
           try {
-            if (it.dir) await api("POST", "/api/files/mkdir", { folder: fo, path: join(base, it.path) });
+            if (it.dir) { const r = await api("POST", "/api/files/mkdir", { folder: fo, path: join(base, it.path) }); if (r && r.skipped) skipped++; }
             else await one(it);
             done++; tell();
           } catch (e) { if (!cancelled) failed = { e, name: it.path }; }
@@ -4729,6 +4730,7 @@
       endJob(jk);
       if (cancelled) { clear(status).append(h("div", { class: "notice", role: "status" }, "Upload cancelled: " + done.toLocaleString() + " of " + total.toLocaleString() + " were uploaded; the rest was not.")); }
       else if (failed) { if (failed.e.message !== "unauthenticated") { clear(status).append(h("div", { class: "notice bad", role: "alert" }, failed.name + ": " + failed.e.message)); } }
+      else if (skipped) clear(status).append(h("div", { class: "notice", role: "status" }, plural(skipped, "item was", "items were") + " left out: the folder's ignore list covers " + (skipped === 1 ? "it" : "them") + "."));
       else clear(status);
       await load();
     }

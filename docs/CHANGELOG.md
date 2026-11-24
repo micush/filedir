@@ -1,5 +1,9 @@
 # Changelog
 
+## [98]
+
+- A folder dropped on the Files page no longer stops at the first file the folder's ignore list covers (such as one inside `.git/`). The node now answers "skipped" for such a file or folder, nothing is written, and the upload goes on with the rest; the page says at the end how many were left out. Before, the refusal was an error and ended the whole upload.
+
 ## [97]
 
 - Ignore patterns now cover everything under an ignored folder. Before, a pattern such as `.git/` was matched against the folder itself only, so a file inside it that arrived from another node (or an upload) was accepted, never indexed here, and then failed with "the file changed here since the last scan". Such files are now left out in every direction, like the folder.

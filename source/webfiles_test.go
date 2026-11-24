@@ -83,7 +83,9 @@ func newSiteEnv(t *testing.T, groups bool) *siteEnv {
 	e.adm = httptest.NewServer(ws.Handler())
 	t.Cleanup(func() { e.site.Close(); e.adm.Close() })
 	s := newFdService(nil, mg)
-	s.cfgFn = func() FilesConfig { return FilesConfig{Folders: []FolderCfg{{ID: "docs", Path: e.root}}} }
+	s.cfgFn = func() FilesConfig {
+		return FilesConfig{Folders: []FolderCfg{{ID: "docs", Path: e.root, Ignore: []string{"*.tmp", ".git/"}}}}
+	}
 	fdSvc = s
 	t.Cleanup(s.Stop)
 	s.reconcile()
@@ -246,6 +248,19 @@ func TestFilesSiteSignInAndWhatItServes(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(e.root, "up", "new.txt")); string(got) != "hello" {
 		t.Fatalf("uploaded file: %q", got)
+	}
+	// a file the ignore list covers is skipped, not an error: a dropped folder goes on with the rest
+	for _, p := range []string{"up/x.tmp", "up/.git/objects/pack/p1"} {
+		code, b, _ = c.req(e.site.URL, "POST", "/api/files/upload?folder=docs&path="+p, []byte("zz"))
+		if code != 200 || !strings.Contains(string(b), `"skipped":true`) {
+			t.Fatalf("an ignored upload %s: %d %s", p, code, b)
+		}
+		if _, err := os.Stat(filepath.Join(e.root, filepath.FromSlash(p))); err == nil {
+			t.Fatalf("%s was written", p)
+		}
+	}
+	if code, b, _ = c.req(e.site.URL, "POST", "/api/files/mkdir", map[string]string{"folder": "docs", "path": "up/.git"}); code != 200 || !strings.Contains(string(b), `"skipped":true`) {
+		t.Fatalf("an ignored folder: %d %s", code, b)
 	}
 	// a zip of a selection
 	code, b, h := c.req(e.site.URL, "GET", "/api/files/zip?folder=docs&path=sub&path=a.txt", nil)

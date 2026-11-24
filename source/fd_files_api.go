@@ -177,6 +177,11 @@ func (w *WebServer) handleFilesUpload(rw http.ResponseWriter, r *http.Request, s
 	if f == nil {
 		return
 	}
+	if f.f.Ignored(q.Get("path"), false) { // left out by the folder's ignore list: not an error, so a dropped folder goes on with the rest
+		io.Copy(io.Discard, io.LimitReader(r.Body, maxUploadBytes+1<<20))
+		writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"skipped": true}})
+		return
+	}
 	fdNoDeadlines(rw)
 	n, err := f.f.WriteFile(q.Get("path"), fdUploadFrom(r))
 	if err != nil {
@@ -225,6 +230,10 @@ func (w *WebServer) handleFilesUploadBegin(rw http.ResponseWriter, r *http.Reque
 	}
 	f := w.fdFolderOf(rw, in.Folder)
 	if f == nil {
+		return
+	}
+	if f.f.Ignored(in.Path, false) {
+		writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"skipped": true}})
 		return
 	}
 	if err := f.f.CheckRoom(in.Size); err != nil {
@@ -342,6 +351,10 @@ func (w *WebServer) handleFilesMkdir(rw http.ResponseWriter, r *http.Request, s 
 	}
 	f := w.fdFolderOf(rw, in.Folder)
 	if f == nil {
+		return
+	}
+	if f.f.Ignored(in.Path, true) {
+		writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "skipped": true})
 		return
 	}
 	if err := f.f.Mkdir(in.Path); err != nil {
