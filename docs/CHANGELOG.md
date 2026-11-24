@@ -1,5 +1,8 @@
 # Changelog
 
+## [77]
+- Files status: the replication graphs sit side by side (they wrap onto a new line only when the window is too narrow).
+
 ## [76]
 - Files status: the Replication card has a bandwidth graph for each node: what it received from the others and what it sent to them, in bytes a second over the last half hour. Counted as the blocks go by, sampled every 5 s, kept in memory (a restart starts it again).
 

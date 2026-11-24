@@ -5357,7 +5357,7 @@
           h("tbody", {}, rows))));
       }
       for (const e of r.node_errors || []) box.append(h("div", { class: "notice bad" }, "Node " + e.node + " did not answer: " + e.error));
-      if (nodes.length > 1 && nodes.some((n) => n.folders.length)) { rep.replaceChildren(...replication(nodes), ...trafficCharts(nodes)); repCard.hidden = false; } else { rep.replaceChildren(); repCard.hidden = true; }
+      if (nodes.length > 1 && nodes.some((n) => n.folders.length)) { const tc = trafficCharts(nodes); rep.replaceChildren(...replication(nodes), ...(tc.length ? [h("div", { class: "traffic-row" }, tc)] : [])); repCard.hidden = false; } else { rep.replaceChildren(); repCard.hidden = true; }
     }
     async function load() {
       const my = ++seq;
