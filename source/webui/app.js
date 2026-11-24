@@ -4415,6 +4415,7 @@
     const sk = (e) => (e.folder != null ? e.folder + "/" : "") + e.path;   // a row's key: a match from another folder may share a path
     const fof = (e) => e.folder || kept.folder;
     let anchor = -1, cursor = -1;   // row numbers: where a Shift+click range starts, and the row the keyboard is on
+    const stopBtn = (fn) => h("button", { class: "btn small danger stop", type: "button", title: "Cancel", "aria-label": "Cancel", onclick: fn }, "✕");   // a red x on the line of a transfer
     let jobSeq = 0;
     const jobs = new Map();         // the transfers that are running, each on a line of its own in the footer (key → what it says)
     const setJob = (k, node) => { jobs.set(k, node); drawFoot(); };
@@ -4476,7 +4477,7 @@
       let cancelled = false;
       const cancel = async () => { cancelled = true; try { await api("POST", "/api/files/fetch/cancel", { id: d.id }); } catch (_) { /* it ends by itself then */ } };
       const jk = "fetch:" + d.id;
-      const say = (t) => setJob(jk, h("span", {}, t + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")));
+      const say = (t) => setJob(jk, h("span", {}, t + " ", stopBtn(cancel)));
       const label = (rc, tot) => "Fetching " + d.name + ": " + size(rc) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((rc * 100) / tot)) + "%)" : "");
       say(label(0, d.total));
       for (let n = 0; n < 43200 && !cancelled; n++) {   // up to six hours, twice a second
@@ -4588,6 +4589,7 @@
       tellErr(await act(async () => {
         for (const it of todo) if ((await copyOne({ folder: it.folder, path: it.path, tofolder: fo, to: join(base, it.name), move, unique: !move }, it.name)) === "cancelled") break;
         if (move) sel.clear();
+        if (todo.some((it) => it.kind === "dir")) { leaf.delete(tkey(fo, base)); await loadKids(fo, base); }   // the folder it went into has folders in it now, open or not
       }));
     };
     // one copy or move: the server does it in the background and the footer says how far it is (a big file takes minutes)
@@ -4596,7 +4598,7 @@
       if (!d.id) return;   // done already (a rename inside one folder)
       const cancel = async () => { try { await api("POST", "/api/files/copy/cancel", { id: d.id }); } catch (_) { /* it ends by itself then */ } };
       const jk = "copy:" + d.id;
-      const say = (n, tot) => setJob(jk, h("span", {}, (body.move ? "Moving " : "Copying ") + name + ": " + size(n) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((n * 100) / tot)) + "%)" : "") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")));
+      const say = (n, tot) => setJob(jk, h("span", {}, (body.move ? "Moving " : "Copying ") + name + ": " + size(n) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((n * 100) / tot)) + "%)" : "") + " ", stopBtn(cancel)));
       say(0, d.total);
       try {
         for (let n = 0; n < 43200; n++) {   // up to six hours, twice a second
@@ -4659,7 +4661,7 @@
       const jk = "upload:" + (++jobSeq);
       const cancel = () => { cancelled = true; ctl.abort(); setJob(jk, "Cancelling…"); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      const tell = () => { if (cancelled) return; setJob(jk, h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel"))); };
+      const tell = () => { if (cancelled) return; setJob(jk, h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", stopBtn(cancel))); };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
         if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
@@ -5009,6 +5011,13 @@
       const within = !here && ((fo === kept.folder && (p === "" ? kept.path !== "" : kept.path.startsWith(p + "/"))) || (fo === ROOT && p === "" && kept.folder !== ROOT && hasRoot()));
       const row = h("div", { class: "tn" + (here ? " cur" : ""), role: "treeitem", "aria-level": String(depth + 1), "aria-expanded": (sub && !sub.length) || leaf.has(k) ? null : String(isOpen), "aria-selected": here ? "true" : "false",
         tabindex: here ? "0" : "-1", "data-folder": fo, "data-path": p, oncontextmenu: treeMenu(fo, p),
+        // a folder is dragged onto another folder of the tree (or of the list) to be moved there; Ctrl copies it
+        draggable: canEdit() && p ? "true" : null,
+        ondragstart: canEdit() && p ? (ev) => {
+          dragItems = [{ folder: fo, path: p, name: p.split("/").pop(), kind: "dir" }]; ev.dataTransfer.effectAllowed = "copyMove";
+          try { ev.dataTransfer.setData("application/x-filedir-items", "1"); } catch (x) { /* a browser that keeps its own types */ }
+        } : null,
+        ondragend: () => { dragItems = null; for (const x of document.querySelectorAll(".over")) x.classList.remove("over"); },
         onkeydown: (ev) => {
           if (ev.target.tagName === "INPUT") return;
           if (ev.key === "Enter") go(fo, p);
@@ -5127,7 +5136,7 @@
         const clearOver = () => { box.classList.remove("drop"); for (const x of main.querySelectorAll(".over")) x.classList.remove("over"); };
         const dragDest = (e) => {   // where a drag of our own items would go: a folder in the tree, or a folder row (a synced folder in the root counts)
           const tn = e.target.closest ? e.target.closest(".tn") : null;
-          if (tn) return { fo: tn.getAttribute("data-folder"), base: tn.getAttribute("data-path") };
+          if (tn) return tn.classList.contains("trashn") ? null : { fo: tn.getAttribute("data-folder"), base: tn.getAttribute("data-path") };
           const row = e.target.closest ? e.target.closest("tr.fm-row[data-kind=dir]") : null, ent = row ? entries.find((x) => x.path === row.getAttribute("data-path")) : null;
           return ent ? (ent.mount ? { fo: ent.mount, base: "" } : { fo: fof(ent), base: ent.path }) : null;
         };
@@ -5225,7 +5234,7 @@
         for (const d of disks.values()) {
           const total = d.used + d.free; if (!total) continue;
           const mine = Math.min(d.mine, d.used), other = d.used - mine;
-          const parts = [["Synced folders", mine, "var(--accent)", "k-mine"], ["Other files", other, "var(--amber)", "k-other"], ["Free", d.free, "var(--ok)", "k-free"]];
+          const parts = [["Synced folders", mine, "#7fa8ff", "k-mine"], ["Other files", other, "#f5c565", "k-other"], ["Free", d.free, "#62dba5", "k-free"]];
           const R = 60, C = 64;
           let a0 = -Math.PI / 2;
           const slices = parts.filter((x) => x[1] > 0).map(([name, v, col]) => {

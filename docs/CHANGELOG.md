@@ -1,5 +1,18 @@
 # Changelog
 
+## [69] - 2026-11-24 — Disk space colours are the same in light and dark
+
+### Changed
+- The three colours of the Disk space pies (blue, amber, green) no longer change with the theme; they are the ones of the dark theme in both.
+
+## [68] - 2026-11-24 — A red x to stop a transfer; drag folders in the left pane
+
+### Changed
+- The Cancel button on the line of an upload, a fetch from a web address, or a copy or move is a red ✕ (its tooltip and its name for a screen reader are still "Cancel").
+
+### Added
+- **Folders in the left pane can be dragged onto other folders** (in the left pane or the list) to move them there; hold Ctrl to copy. A folder cannot be dropped into itself or into what is inside it, and the trash is not a place to drop on.
+
 ## [67] - 2026-11-24 — Nodes in alphabetical order
 
 ### Changed
