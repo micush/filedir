@@ -1,5 +1,15 @@
 # Changelog
 
+## [60] - 2026-11-24 — No Size column in the Files card
+
+### Changed
+- The Files card of the status page no longer has a Size column; the Disk space card shows what the folders hold, with the rest of the disk.
+
+## [59] - 2026-11-24 — Disk space pie charts
+
+### Added
+- **Files ▸ Status has a "Disk space" card**: a pie chart for the disk of each node that holds synced folders, with what the folders hold, what else is on the disk, and what is free (df's numbers: free is what an ordinary user may still use). Folders on the same disk share one pie. The node answers with `disk_used`, `disk_free` and `disk_id` for each folder (`GET /api/files/status`).
+
 ## [58] - 2026-11-24 — Upload from URL shows the file when it is done
 
 ### Fixed

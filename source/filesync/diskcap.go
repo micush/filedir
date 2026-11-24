@@ -29,6 +29,17 @@ func DiskUse(path string) (pct float64, avail uint64, err error) {
 	return float64(used) * 100 / float64(used+avail), avail, nil
 }
 
+// DiskSpace says how much of the filesystem under a path is used and how much an ordinary user may still use (the way df does), and an
+// identity for the filesystem so that folders on one disk are told apart from folders on another.
+func DiskSpace(path string) (used, avail uint64, id string, err error) {
+	var st syscall.Statfs_t
+	if err = syscall.Statfs(path, &st); err != nil {
+		return 0, 0, "", err
+	}
+	bs := uint64(st.Bsize)
+	return (uint64(st.Blocks) - uint64(st.Bfree)) * bs, uint64(st.Bavail) * bs, fmt.Sprint(st.Fsid), nil
+}
+
 // room refuses when taking in "incoming" more bytes would leave the disk fuller than the limit (MaxUsedPct, 0: no limit).  Before it
 // refuses, the folder's trash is emptied (it is a copy kept for days, and the room is worth more) and the disk is measured again.
 func (f *Folder) room(incoming int64) error {

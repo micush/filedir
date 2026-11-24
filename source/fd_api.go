@@ -40,6 +40,9 @@ type fdFolderStatus struct {
 	Deleted  int                 `json:"deleted"` // tombstones
 	Conflict int                 `json:"conflicts"`
 	Scanned  int64               `json:"scanned,omitempty"`
+	DiskUsed uint64              `json:"disk_used,omitempty"` // the disk that holds the folder: used, and what may still be used
+	DiskFree uint64              `json:"disk_free,omitempty"`
+	DiskID   string              `json:"disk_id,omitempty"`
 	Error    string              `json:"error,omitempty"`
 	Peers    []fdPeerView        `json:"peers,omitempty"`
 	Active   []filesync.Transfer `json:"active,omitempty"` // large files being pulled now
@@ -75,6 +78,9 @@ func (s *fdService) Status() fdNodeStatus {
 		}
 		f.mu.Unlock()
 		sort.Slice(fs.Peers, func(i, j int) bool { return fs.Peers[i].Node < fs.Peers[j].Node })
+		if u, av, id, err := filesync.DiskSpace(f.cfg.Path); err == nil {
+			fs.DiskUsed, fs.DiskFree, fs.DiskID = u, av, id
+		}
 		if f.f != nil {
 			fs.Active = f.f.Transfers()
 			for _, e := range f.f.Entries() {

@@ -5156,7 +5156,7 @@
   // ── Files, Monitor  (API: GET /api/files/status) ─────────────────────────────────
   // How syncing is going: every node's folders, what each holds, when it was last scanned and when it last synced with each other node.
   VIEWS.files_status = (() => {
-    let box, rep, repCard, status, seq = 0;
+    let box, rep, repCard, disk, diskCard, status, seq = 0;
     const count = (v) => (Number(v) || 0).toLocaleString();
     const size = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? (n / 1024).toFixed(1) + " kB" : n + " B");
     const ago = (u) => { if (!u) return "never"; const s = Math.max(0, Math.floor(Date.now() / 1000 - u)); return s < 90 ? s + " s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
@@ -5199,23 +5199,60 @@
       }
       return out;
     }
+    // used and free space of the disks that hold the folders: one pie for each disk of each node (what the folders on it hold, what else is
+    // on it, what is free)
+    function diskPies(nodes) {
+      const NS = "http://www.w3.org/2000/svg", out = [];
+      const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
+      for (const n of nodes) {
+        const disks = new Map();
+        for (const f of n.folders) {
+          if (!f.disk_id) continue;
+          const d = disks.get(f.disk_id) || { used: f.disk_used || 0, free: f.disk_free || 0, mine: 0, ids: [] };
+          d.mine += f.bytes || 0; d.ids.push(f.id); disks.set(f.disk_id, d);
+        }
+        for (const d of disks.values()) {
+          const total = d.used + d.free; if (!total) continue;
+          const mine = Math.min(d.mine, d.used), other = d.used - mine;
+          const parts = [["Synced folders", mine, "var(--accent)"], ["Other files", other, "var(--amber)"], ["Free", d.free, "var(--surface-2)"]];
+          const R = 60, C = 64;
+          let a0 = -Math.PI / 2;
+          const slices = parts.filter((x) => x[1] > 0).map(([name, v, col]) => {
+            const fr = v / total;
+            if (fr >= 0.9999) return sv("circle", { cx: C, cy: C, r: R, fill: col, stroke: "var(--border)" });
+            const a1 = a0 + fr * 2 * Math.PI, big = fr > 0.5 ? 1 : 0;
+            const path = "M" + C + "," + C + " L" + (C + R * Math.cos(a0)).toFixed(2) + "," + (C + R * Math.sin(a0)).toFixed(2) + " A" + R + "," + R + " 0 " + big + " 1 " + (C + R * Math.cos(a1)).toFixed(2) + "," + (C + R * Math.sin(a1)).toFixed(2) + " Z";
+            a0 = a1;
+            return sv("path", { d: path, fill: col, stroke: "var(--border)", "stroke-width": "1" }, sv("title", {}, name + ": " + size(v)));
+          });
+          const pct = (v) => (v * 100 / total).toFixed(v * 100 / total < 10 ? 1 : 0) + "%";
+          const svg = sv("svg", { viewBox: "0 0 128 128", width: "128", height: "128", role: "img", "aria-label": "Disk of " + (n.name || n.node) + ": " + size(d.used) + " used of " + size(total) + ", " + size(d.free) + " free" }, ...slices);
+          const legend = h("table", { class: "fstat disk-legend" }, h("tbody", {}, parts.map(([name, v, col]) => h("tr", {},
+            h("td", {}, h("span", { class: "disk-key", style: "background:" + col }), " " + name), h("td", { class: "num" }, size(v)), h("td", { class: "num" }, pct(v))))));
+          out.push(h("div", { class: "disk" }, svg, h("div", {}, h("div", { class: "disk-title" }, (n.name || n.node) + (d.ids.length ? ": " + d.ids.join(", ") : "")),
+            h("div", { class: "muted" }, size(d.used) + " used of " + size(total)), legend)));
+        }
+      }
+      return out;
+    }
     function draw(r) {
       clear(box);
       const nodes = r.nodes || [];
+      const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
       else {
         // one table for every node, so the columns line up from node to node
         const rows = [];
         for (const n of nodes) {
           if (!n.folders.length) continue;
-          rows.push(h("tr", { class: "grp" }, h("th", { colspan: "8", scope: "colgroup" }, (n.name || n.node) + (n.addr ? " (" + n.addr + ")" : ""))));
+          rows.push(h("tr", { class: "grp" }, h("th", { colspan: "7", scope: "colgroup" }, (n.name || n.node) + (n.addr ? " (" + n.addr + ")" : ""))));
           for (const f of n.folders) rows.push(h("tr", { tabindex: "0", "aria-label": (n.name || n.node) + " " + f.id,
             oncontextmenu: rowMenu([["Open in Files", () => { state.prefill.files = f.id; selectTab("files"); }], ["Copy path", () => { try { navigator.clipboard.writeText(f.path); } catch (_) { /* not allowed */ } }]]) },
-            h("td", {}, f.id), h("td", { class: "mono", title: f.path }, f.path), h("td", { class: "num" }, count(f.files)), h("td", { class: "num" }, count(f.dirs)), h("td", { class: "num" }, size(f.bytes)),
+            h("td", {}, f.id), h("td", { class: "mono", title: f.path }, f.path), h("td", { class: "num" }, count(f.files)), h("td", { class: "num" }, count(f.dirs)),
             h("td", { class: "num" }, f.conflicts ? count(f.conflicts) : ""), h("td", {}, ago(f.scanned)), h("td", {}, syncWord(f, nodes.length > 1))));
         }
         box.append(h("div", { class: "scroll" }, h("table", { class: "fstat" },
-          h("thead", {}, h("tr", {}, ["Folder", "Path", "Files", "Folders", "Size", "Conflicts", "Scanned", "Sync"].map((t, i) => h("th", { class: i >= 2 && i <= 5 ? "num" : "" }, t)))),
+          h("thead", {}, h("tr", {}, ["Folder", "Path", "Files", "Folders", "Conflicts", "Scanned", "Sync"].map((t, i) => h("th", { class: i >= 2 && i <= 4 ? "num" : "" }, t)))),
           h("tbody", {}, rows))));
       }
       for (const e of r.node_errors || []) box.append(h("div", { class: "notice bad" }, "Node " + e.node + " did not answer: " + e.error));
@@ -5226,7 +5263,7 @@
       try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); draw(r); } } catch (e) { fail(status)(e); }
     }
     return {
-      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); repCard = section("Replication", rep); repCard.hidden = true; main.append(status, section("Files", box), repCard); load(); },
+      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); repCard = section("Replication", rep); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard); load(); },
       async poll() { await load(); },
       poll_ms: 5000,
     };
