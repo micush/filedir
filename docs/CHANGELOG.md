@@ -1,5 +1,8 @@
 # Changelog
 
+## [80]
+- The replication graphs are in Mbps (megabits a second), like the replication limit.
+
 ## [79]
 - The empty-trash question's buttons are just "This node" and "All nodes".
 

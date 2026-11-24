@@ -5283,17 +5283,17 @@
       dlg.addEventListener("close", () => dlg.remove());
       document.body.append(dlg); dlg.showModal(); (all || go).blur(); go.focus();
     }
-    // What replication moved, per node: the bytes a second this node received from the others (blue) and sent to them (orange), over the
+    // What replication moved, per node: the Mbit/s this node received from the others (blue) and sent to them (orange), over the
     // half hour the node has kept (traffic in the status: a sample every 5 s).  Drawn like the pies: fixed colours, one chart for each node.
     function trafficCharts(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
       const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
-      const rate = (v) => (v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + " MB/s" : v >= 1e3 ? Math.round(v / 1e3) + " KB/s" : Math.round(v) + " B/s");
+      const rate = (v) => { const m = v / 1e6; return (m >= 10 ? m.toFixed(0) : m >= 1 ? m.toFixed(1) : m.toFixed(2)) + " Mbps"; };   // v is in bits a second
       for (const n of nodes) {
-        const pts = n.traffic || [];
+        const pts = (n.traffic || []).map((p) => ({ t: p.t, rx: p.rx * 8, tx: p.tx * 8 }));   // bytes a second in the status, bits a second here
         if (pts.length < 2) continue;
         const name = n.name || n.node;
-        const peak = Math.max(1000, ...pts.map((p) => Math.max(p.rx, p.tx)));
+        const peak = Math.max(1e5, ...pts.map((p) => Math.max(p.rx, p.tx)));
         const step = 10 ** Math.floor(Math.log10(peak)), max = [1, 2, 5, 10].map((m) => m * step).find((m) => m >= peak);
         const W = 560, H = 130, L = 64, R = 10, T = 8, B = 20, pw = W - L - R, ph = H - T - B;
         const t0 = pts[0].t, t1 = pts[pts.length - 1].t, span = Math.max(1, t1 - t0);
