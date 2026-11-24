@@ -1,5 +1,11 @@
 # Changelog
 
+## [79]
+- The empty-trash question's buttons are just "This node" and "All nodes".
+
+## [78]
+- Files status: the red ✕ next to Trash asks whether to empty the trash on this node or on all nodes (the nodes that have any). With one node with a trash it asks as before.
+
 ## [77]
 - Files status: the replication graphs sit side by side (they wrap onto a new line only when the window is too narrow).
 

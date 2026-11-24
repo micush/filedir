@@ -5251,23 +5251,37 @@
     // used and free space of the disks that hold the folders: one pie for each disk of each node (what the folders on it hold, what else is
     // on it, what is free)
     // a red x at the Trash of a pie: it asks, and empties the trash of the folders on that disk of that node (through that node)
+    let shownNodes = [];   // the nodes of the last status, for "all nodes" in the empty-trash question
     function emptyTrashOf(n, d) {
-      const meta = state.nodes.find((x) => x.node_id === n.node), self = !meta || meta.self, who = n.name || n.node;
-      const call = (method, path, body) => (self ? api(method, path, body, true) : api(method, "/api/proxy?node=" + encodeURIComponent(meta.addr) + "&path=" + encodeURIComponent(path), body, true));
+      const nameOf = (x) => x.name || x.node, who = nameOf(n);
+      const callOn = (x, method, path, body) => { const meta = state.nodes.find((m) => m.node_id === x.node); return !meta || meta.self ? api(method, path, body, true) : api(method, "/api/proxy?node=" + encodeURIComponent(meta.addr) + "&path=" + encodeURIComponent(path), body, true); };
+      const others = shownNodes.filter((x) => x.node !== n.node && x.folders.some((f) => (f.trash_bytes || 0) > 0));   // the other nodes that have a trash
       const dlg = h("dialog", { class: "cv-dialog", "aria-label": "Empty the trash on " + who });
       const err = h("div", { class: "notice bad hidden", role: "alert" });
-      const go = h("button", { type: "button", class: "btn danger", onclick: async () => {
-        go.disabled = true; go.textContent = "Working…"; err.classList.add("hidden");
-        try {
-          for (const id of d.ids) await call("POST", "/api/files/trash/empty", { folder: id });
-          dlg.close(); load();
-        } catch (e) { go.disabled = false; go.textContent = "Empty trash"; err.textContent = e.message; err.classList.remove("hidden"); }
-      } }, "Empty trash");
-      dlg.append(h("h2", {}, "Empty the trash on " + who + "?"),
-        h("p", { class: "pre-line" }, "The trash of " + (d.ids.length === 1 ? "the folder " : "the folders ") + d.ids.map((id) => (id === "/" ? "/ (root)" : id)).join(", ") + " on " + who + " holds " + size(d.trash) + ". It is deleted for good and cannot be got back. The other nodes keep their own trash."),
-        err, h("div", { class: "toolbar" }, h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Cancel"), go));
+      const buttons = [];
+      const run = (btn, label, targets) => async () => {
+        buttons.forEach((b) => { b.disabled = true; }); btn.textContent = "Working…"; err.classList.add("hidden");
+        const bad = [];
+        for (const t of targets) for (const id of t.ids) { try { await callOn(t.n, "POST", "/api/files/trash/empty", { folder: id }); } catch (e) { bad.push(nameOf(t.n) + " " + id + ": " + e.message); } }
+        if (!bad.length) { dlg.close(); load(); return; }
+        buttons.forEach((b) => { b.disabled = false; }); btn.textContent = label; err.textContent = bad.join("\n"); err.classList.remove("hidden"); load();
+      };
+      const mine = { n, ids: d.ids };
+      const go = h("button", { type: "button", class: "btn danger" }, others.length ? "This node" : "Empty trash");
+      go.onclick = run(go, go.textContent, [mine]);
+      buttons.push(go);
+      let all = null;
+      if (others.length) {
+        const targets = [mine].concat(others.map((x) => ({ n: x, ids: x.folders.filter((f) => (f.trash_bytes || 0) > 0).map((f) => f.id) })));
+        all = h("button", { type: "button", class: "btn danger" }, "All nodes");
+        all.onclick = run(all, all.textContent, targets); buttons.push(all);
+      }
+      dlg.append(h("h2", {}, others.length ? "Empty the trash on this node, or on all nodes?" : "Empty the trash on " + who + "?"),
+        h("p", { class: "pre-line" }, "The trash of " + (d.ids.length === 1 ? "the folder " : "the folders ") + d.ids.map((id) => (id === "/" ? "/ (root)" : id)).join(", ") + " on " + who + " holds " + size(d.trash) + ". It is deleted for good and cannot be got back."
+          + (others.length ? " “All nodes” also empties the trash on " + others.map(nameOf).join(", ") + "." : " The other nodes keep their own trash.")),
+        err, h("div", { class: "toolbar" }, h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Cancel"), go, all));
       dlg.addEventListener("close", () => dlg.remove());
-      document.body.append(dlg); dlg.showModal(); go.focus();
+      document.body.append(dlg); dlg.showModal(); (all || go).blur(); go.focus();
     }
     // What replication moved, per node: the bytes a second this node received from the others (blue) and sent to them (orange), over the
     // half hour the node has kept (traffic in the status: a sample every 5 s).  Drawn like the pies: fixed colours, one chart for each node.
@@ -5339,6 +5353,7 @@
       clear(box);
       const nodeName = (x) => x.name || x.node;   // every card lists the nodes by name
       const nodes = (r.nodes || []).slice().sort((x, y) => nodeName(x).localeCompare(nodeName(y), undefined, { numeric: true, sensitivity: "base" }));
+      shownNodes = nodes;
       const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
       else {
