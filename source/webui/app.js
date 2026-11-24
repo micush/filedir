@@ -4408,6 +4408,10 @@
     const sk = (e) => (e.folder != null ? e.folder + "/" : "") + e.path;   // a row's key: a match from another folder may share a path
     const fof = (e) => e.folder || kept.folder;
     let anchor = -1, cursor = -1;   // row numbers: where a Shift+click range starts, and the row the keyboard is on
+    let jobSeq = 0;
+    const jobs = new Map();         // the transfers that are running, each on a line of its own in the footer (key → what it says)
+    const setJob = (k, node) => { jobs.set(k, node); drawFoot(); };
+    const endJob = (k) => { jobs.delete(k); drawFoot(); };
     let progress = "";              // "Uploading 3 of 42" while a transfer runs: said in the footer, not in a bar
     let drawn = "", treeDrawn = "";  // what is on screen, so a poll that finds nothing new leaves it (and the focus in it) alone
     const opened = new Set();       // the tree nodes that are open, by tkey
@@ -4418,6 +4422,7 @@
     const join = (a, b) => (a ? a + "/" : "") + b;
     const parent = (p) => p.split("/").slice(0, -1).join("/");
     const tkey = (fo, p) => fo + "\n" + p;
+    let treeRenaming = "";   // the tree node whose name is a text box now (by tkey)
     const leaf = new Set();   // folders known to hold no folder: no arrow
     const trash = { on: false, folder: "", when: "", dir: "" };   // the trash node: the trash of one folder on this node, one level at a time (when: which deletion, dir: where in it)
     const ROOT = "/";   // the name of the root folder, when one is defined: the others are listed inside it
@@ -4460,21 +4465,21 @@
     async function trackFetch(d, fo) {
       let cancelled = false;
       const cancel = async () => { cancelled = true; try { await api("POST", "/api/files/fetch/cancel", { id: d.id }); } catch (_) { /* it ends by itself then */ } };
-      const say = (t) => { progress = h("span", {}, t + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
+      const jk = "fetch:" + d.id;
+      const say = (t) => setJob(jk, h("span", {}, t + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")));
       const label = (rc, tot) => "Fetching " + d.name + ": " + size(rc) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((rc * 100) / tot)) + "%)" : "");
       say(label(0, d.total));
       for (let n = 0; n < 43200 && !cancelled; n++) {   // up to six hours, twice a second
         await new Promise((r) => setTimeout(r, 500));
         let st;
-        try { st = (await api("GET", "/api/files/fetch?id=" + encodeURIComponent(d.id))).data; } catch (e) { if (e.message === "unauthenticated") return; progress = ""; drawFoot(); fail(status)(e); return; }
+        try { st = (await api("GET", "/api/files/fetch?id=" + encodeURIComponent(d.id))).data; } catch (e) { if (e.message === "unauthenticated") return; endJob(jk); fail(status)(e); return; }
         if (st.state === "running") { say(label(st.received, st.total)); continue; }
-        progress = "";
+        endJob(jk);
         if (st.state === "failed") fail(status)(new Error("Fetching " + d.name + " failed: " + st.error));
-        drawFoot();
         if (st.state === "done") await load();
         return;
       }
-      progress = ""; drawFoot();
+      endJob(jk);
     }
     const fetchUrl = (base, fo = kept.folder) => ask("Upload from URL", "The node downloads it into this folder, in the background. Only http and https.", { input: "", label: "Web address", ok: "Fetch" },
       (v) => (!/^https?:\/\//i.test(v.trim()) ? "Give a web address that starts with http:// or https://." : act(async () => {
@@ -4489,6 +4494,40 @@
       if (inp) { inp.focus(); const dot = e.kind === "file" ? e.name.lastIndexOf(".") : -1; inp.setSelectionRange(0, dot > 0 ? dot : e.name.length); }
     }
     function endRename() { renamingKey = null; drawn = ""; drawList(); const r = cursor >= 0 ? focusRow(cursor) : null; return r; }
+    // a folder renamed in the tree: its name turns into a text box in its row, as in the list
+    function treeRename(fo, p) {
+      if (!p || ro()) return;
+      treeRenaming = tkey(fo, p); treeDrawn = ""; drawTree();
+      const inp = tree.querySelector(".fm-rename");
+      if (inp) { inp.focus(); inp.select(); }
+    }
+    function treeRenameInput(fo, p) {
+      let done = false;
+      const name = p.split("/").pop();
+      const finish = (ok) => {
+        if (done) return; done = true;
+        const v = inp.value.trim();
+        treeRenaming = ""; treeDrawn = ""; drawTree();
+        const c = tree.querySelector(".tn.cur"); if (c && tree.contains(document.activeElement) === false && ok) c.focus();
+        if (!ok || !v || v === name) return;
+        if (v.includes("/")) { progress = "A name cannot have a slash in it."; drawFoot(); return; }
+        const np = join(parent(p), v);
+        act(async () => {
+          await api("POST", "/api/files/rename", { folder: fo, from: p, to: np });
+          // what was open or kept under the old name follows the new one
+          const old = tkey(fo, p) , nw = tkey(fo, np);
+          for (const k of [...opened]) if (k === old || k.startsWith(old + "/")) { opened.delete(k); opened.add(nw + k.slice(old.length)); }
+          for (const k of [...kids.keys()]) if (k === old || k.startsWith(old + "/")) kids.delete(k);
+          if (kept.folder === fo && (kept.path === p || kept.path.startsWith(p + "/"))) kept.path = np + kept.path.slice(p.length);
+        }).then((err) => {
+          if (err) { progress = "Could not rename: " + err; drawFoot(); setTimeout(() => { if (progress.startsWith("Could not rename")) { progress = ""; drawFoot(); } }, 6000); }
+        });
+      };
+      const inp = h("input", { class: "fm-rename", type: "text", value: name, "aria-label": "New name", spellcheck: "false", autocomplete: "off",
+        onkeydown: (ev) => { ev.stopPropagation(); if (ev.key === "Enter") { ev.preventDefault(); finish(true); } else if (ev.key === "Escape") { ev.preventDefault(); finish(false); } },
+        onblur: () => finish(true), onclick: (ev) => ev.stopPropagation(), ondblclick: (ev) => ev.stopPropagation(), oncontextmenu: (ev) => ev.stopPropagation() });
+      return inp;
+    }
     function renameInput(e) {
       let done = false;
       const finish = (ok) => {
@@ -4510,7 +4549,7 @@
     const removeMany = (list, fo = kept.folder) => !(list = list.filter((e) => !e.mount)).length ? null : ask(list.length === 1 ? "Delete " + list[0].name + "?" : "Delete " + list.length + " items?",
       (list.length === 1 ? (list[0].kind === "dir" ? "The folder and everything in it is" : "The file is") : "These " + list.length + " items, and everything in the folders among them, are") + " deleted here and on every node. A copy stays in each node's trash for 30 days.",
       { ok: "Delete", danger: true }, () => act(async () => {
-        for (const e of list) await api("POST", "/api/files/delete", { folder: fo, path: e.path });
+        for (const e of list) await api("POST", "/api/files/delete", { folder: e.folder || fo, path: e.path });   // a match in the filter says which folder it is in
         sel.clear();
       }));
     const copyText = (t) => { try { navigator.clipboard.writeText(t); } catch (_) { /* the browser did not allow it */ } };
@@ -4538,7 +4577,8 @@
       const d = (await api("POST", "/api/files/copy", { ...body, async: true })).data;
       if (!d.id) return;   // done already (a rename inside one folder)
       const cancel = async () => { try { await api("POST", "/api/files/copy/cancel", { id: d.id }); } catch (_) { /* it ends by itself then */ } };
-      const say = (n, tot) => { progress = h("span", {}, (body.move ? "Moving " : "Copying ") + name + ": " + size(n) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((n * 100) / tot)) + "%)" : "") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
+      const jk = "copy:" + d.id;
+      const say = (n, tot) => setJob(jk, h("span", {}, (body.move ? "Moving " : "Copying ") + name + ": " + size(n) + (tot > 0 ? " of " + size(tot) + " (" + Math.min(100, Math.floor((n * 100) / tot)) + "%)" : "") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")));
       say(0, d.total);
       try {
         for (let n = 0; n < 43200; n++) {   // up to six hours, twice a second
@@ -4549,7 +4589,7 @@
           if (st.state === "done") return;
           say(st.done, st.total);
         }
-      } finally { progress = ""; drawFoot(); }
+      } finally { endJob(jk); }
     };
     const paste = (base, fo) => { if (clip) transfer(clip, fo, base, false); };
     const duplicate = async (list) => tellErr(await act(async () => {
@@ -4598,9 +4638,10 @@
       const total = items.length;
       let done = 0, failed = null, next = 0, cancelled = false;
       const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
-      const cancel = () => { cancelled = true; ctl.abort(); progress = "Cancelling…"; drawFoot(); };
+      const jk = "upload:" + (++jobSeq);
+      const cancel = () => { cancelled = true; ctl.abort(); setJob(jk, "Cancelling…"); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
-      const tell = () => { if (cancelled) return; progress = h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel")); drawFoot(); };
+      const tell = () => { if (cancelled) return; setJob(jk, h("span", {}, "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…") + " ", h("button", { class: "btn small", type: "button", onclick: cancel }, "Cancel"))); };
       const one = async (it) => {
         const p = join(base, it.path), file = it.file;
         if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
@@ -4622,7 +4663,7 @@
         }
       };
       await Promise.all([worker(), worker(), worker()]);   // a few at a time: many small files are not left waiting for one big one
-      progress = "";
+      endJob(jk);
       if (cancelled) { clear(status).append(h("div", { class: "notice", role: "status" }, "Upload cancelled: " + done.toLocaleString() + " of " + total.toLocaleString() + " were uploaded; the rest was not.")); }
       else if (failed) { if (failed.e.message !== "unauthenticated") { clear(status).append(h("div", { class: "notice bad", role: "alert" }, failed.name + ": " + failed.e.message)); } }
       else clear(status);
@@ -4777,7 +4818,7 @@
         ...(!ro() ? [["To paste", () => toClip([e])]] : []), ...(canEdit() ? [["Duplicate", () => duplicate([e])]] : []),
         ...(e.kind === "file" ? [["Link location", () => copyLink(e, fof(e))], ...(!ro() ? [["Public link…", () => publicLink(e, fof(e))]] : [])] : []),
         ["Path", () => copyText(e.path)]]],
-      ...(canEdit() && !e.mount ? [["Rename…", () => rename(e)], ["Delete…", () => removeMany([e]), "danger"]] : []),
+      ...(canEdit() && !e.mount ? [["Rename…", () => rename(e)], ["Delete…", () => removeMany([e]), "danger"]] : searching() && !ro() && !trash.on && !e.mount ? [["Delete…", () => removeMany([e]), "danger"]] : []),
       "-",
       ["Properties", () => props([e])],
     ].filter(Boolean));
@@ -4785,7 +4826,7 @@
       ...(new Set(list.map(fof)).size === 1 && !list.some((e) => e.mount) ? [["Download " + list.length + " items as zip", () => downloadZip(list, fof(list[0]))], "-"] : []),
       ["Copy", [...(!ro() && !list.every((e) => e.mount) ? [["To paste", () => toClip(list)]] : []), ...(canEdit() && !list.every((e) => e.mount) ? [["Duplicate", () => duplicate(list)]] : []),
         ["Paths", () => copyText(list.map((e) => e.path).join("\n"))]]],
-      ...(canEdit() && !list.some((e) => e.mount) ? [["Delete " + list.length + " items…", () => removeMany(list), "danger"]] : []),
+      ...((canEdit() || (searching() && !ro() && !trash.on)) && !list.some((e) => e.mount) ? [["Delete " + list.length + " items…", () => removeMany(list), "danger"]] : []),
       "-",
       ["Properties", () => props(list)],
     ]);
@@ -4805,7 +4846,7 @@
     const treeMenu = (fo, p) => rowMenu(groups([   // Open, Download | Upload, New | Rename, Delete | Properties
       [["Open", () => go(fo, p)], ["Download as zip", () => downloadZip([{ path: p }], fo)]],
       hereItems(p, fo, ""),
-      p && !ro() ? [["Rename…", () => { go(fo, parent(p)).then(() => { const e = entries.find((x) => x.path === p); if (e) rename(e); }); }], ["Delete…", () => removeMany([{ name: p.split("/").pop(), path: p, kind: "dir" }], fo), "danger"]] : [],
+      p && !ro() ? [["Rename…", () => treeRename(fo, p)], ["Delete…", () => removeMany([{ name: p.split("/").pop(), path: p, kind: "dir" }], fo), "danger"]] : [],
       [["Properties", () => props([{ kind: "dir", name: p ? p.split("/").pop() : (fo === ROOT ? "The root folder" : fo), path: p, folder: fo }])]],
     ]));
     function groups(gs) { const out = []; for (let g of gs) { g = g.filter((x, i, a) => x !== "-" || (i > 0 && i < a.length - 1 && a[i - 1] !== "-")); if (g.length) { if (out.length) out.push("-"); out.push(...g); } } return out; }   // the groups of a menu, a line between those that are there
@@ -4893,13 +4934,30 @@
       const f = folders.find((x) => x.id === kept.folder), n = sel.size;
       const bytes = selected().reduce((a, e) => a + (e.kind === "file" ? e.size : 0), 0);
       foot.title = f ? (f.peers || []).filter((x) => x.error).map((x) => (x.name || x.node) + ": " + x.error).join("\n") : "";
-      clear(foot).append(progress ? progress : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on this node: " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
+      clear(foot).append(...[...jobs.values()].map((n) => h("div", { class: "fm-job" }, n)), progress ? progress : jobs.size ? "" : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on this node: " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
         : f ? f.files.toLocaleString() + " files, " + f.dirs.toLocaleString() + " folders, " + size(f.bytes) + " in this folder" +
           (f.conflicts ? "; " + f.conflicts + " conflict cop" + (f.conflicts === 1 ? "y" : "ies") : "") + (f.scanned ? "; scanned " + stamp(f.scanned) : "") + (f.error ? ". Problem: " + f.error : "") + ((f.peers || []).filter((x) => x.error).map((x) => ". Not syncing with " + (x.name || x.node) + ": " + whyShort(x.error)).join("")) : "");
     }
+    // the column the list is sorted by (a click on its header; a second click turns it round). Folders stay above files. None: the order it came in.
+    const order = { key: "", dir: 1 };
+    const sortKeys = { name: (e) => e.name, in: (e) => e.folder + "/" + parent(e.path), size: (e) => (e.kind === "file" ? e.size || 0 : -1), mod: (e) => e.mod || 0, by: (e) => e.by || "" };
+    function sortEntries() {
+      if (!order.key || trash.on) return;
+      const f = sortKeys[order.key], d = order.dir;
+      const cmp = (a, b) => { const x = f(a), y = f(b); return typeof x === "number" ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: "base" }); };
+      entries = entries.map((e, i) => [e, i]).sort((a, b) => ((a[0].up ? 0 : 1) - (b[0].up ? 0 : 1)) || ((a[0].kind === "dir" ? 0 : 1) - (b[0].kind === "dir" ? 0 : 1)) || d * cmp(a[0], b[0]) || a[1] - b[1]).map((x) => x[0]);
+    }
+    const sortHead = (key, label, cls) => {
+      if (trash.on) return h("th", cls ? { class: cls } : {}, label);
+      const on = order.key === key;
+      return h("th", { class: (cls ? cls + " " : "") + "sortable", role: "columnheader", "aria-sort": on ? (order.dir > 0 ? "ascending" : "descending") : "none", tabindex: "0", title: "Sort by " + label.toLowerCase(),
+        onclick: () => { order.dir = on ? -order.dir : 1; order.key = key; drawn = ""; drawList(); },
+        onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.click(); } } }, label + (on ? (order.dir > 0 ? " ▲" : " ▼") : ""));
+    };
     function drawList() {
       if (renamingKey && box.querySelector(".fm-rename")) return;   // a name being typed is not redrawn under the cursor
-      const sig = JSON.stringify([searching() ? scopeName() : kept, entries, truncated, ro(), folders.length, term, renamingKey, trash]);   // the matches do not move when the tree does
+      sortEntries();
+      const sig = JSON.stringify([searching() ? scopeName() : kept, entries, truncated, ro(), folders.length, term, renamingKey, trash, order]);   // the matches do not move when the tree does
       if (sig === drawn) { paintSel(); return; }
       drawn = sig;
       const had = box.contains(document.activeElement);
@@ -4909,7 +4967,7 @@
       else if (!entries.length && term.trim()) box.append(h("div", { class: "empty" }, "Nothing matches “" + term.trim() + "”."));
       else if (!entries.length) box.append(h("div", { class: "empty" }, "Nothing here yet." + (ro() ? "" : " Drop files or folders here, or right-click for the menu.")));
       else box.append(h("table", { class: "fm", role: "grid", "aria-multiselectable": "true" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Name"), searching() ? h("th", {}, "In") : null, h("th", { class: "num" }, "Size"), h("th", {}, trash.on ? "Deleted" : "Modified"), SITE === "files" ? null : h("th", {}, "Node"))),
+        h("thead", {}, h("tr", {}, sortHead("name", "Name"), searching() ? sortHead("in", "In") : null, sortHead("size", "Size", "num"), sortHead("mod", trash.on ? "Deleted" : "Modified"), SITE === "files" ? null : sortHead("by", "Node"))),
         h("tbody", {}, entries.map((e, i) => h("tr", { tabindex: i === 0 ? "0" : "-1", class: "fm-row", "data-kind": e.kind, "data-path": e.path, "aria-label": e.name, "aria-selected": "false",
           draggable: canEdit() && !e.mount && renamingKey !== sk(e) ? "true" : null,
           ondragstart: canEdit() && !e.mount ? (ev) => {
@@ -4934,21 +4992,25 @@
       const row = h("div", { class: "tn" + (here ? " cur" : ""), role: "treeitem", "aria-level": String(depth + 1), "aria-expanded": (sub && !sub.length) || leaf.has(k) ? null : String(isOpen), "aria-selected": here ? "true" : "false",
         tabindex: here ? "0" : "-1", "data-folder": fo, "data-path": p, oncontextmenu: treeMenu(fo, p),
         onkeydown: (ev) => {
+          if (ev.target.tagName === "INPUT") return;
           if (ev.key === "Enter") go(fo, p);
+          else if (ev.key === "F2" && p) { ev.preventDefault(); treeRename(fo, p); }
           else if (ev.key === "ArrowRight" && !isOpen) toggle(fo, p);
           else if (ev.key === "ArrowLeft" && isOpen) toggle(fo, p);
           else if (ev.key === "ContextMenu" || (ev.key === "F10" && ev.shiftKey)) treeMenu(fo, p)(ev);
           else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { const all = [...tree.querySelectorAll(".tn")], i = all.indexOf(ev.currentTarget); const to = all[i + (ev.key === "ArrowDown" ? 1 : -1)]; if (to) { ev.preventDefault(); to.focus(); } }
         } },
         h("button", { type: "button", class: "tw" + ((sub && !sub.length) || leaf.has(k) ? " none" : ""), tabindex: "-1", "aria-hidden": "true", onclick: (ev) => { ev.stopPropagation(); toggle(fo, p); } }, isOpen ? "▾" : "▸"),
-        h("span", { class: "tl", onclick: () => go(fo, p) }, (here || within ? "📂 " : "📁 ") + name));   // the folder that is open, and every folder above it, show an open folder
+        treeRenaming === k ? h("span", { class: "tl" }, (here || within ? "📂 " : "📁 "), treeRenameInput(fo, p))
+          : h("span", { class: "tl", onclick: () => go(fo, p) }, (here || within ? "📂 " : "📁 ") + name));   // the folder that is open, and every folder above it, show an open folder
       row.style.paddingLeft = (0.3 + depth * 1.05) + "rem";
       out.push(row);
       if (isOpen && sub) for (const c of sub) { if (c.mount) treeNode(c.mount, "", c.name, depth + 1, out); else treeNode(fo, join(p, c.name), c.name, depth + 1, out); }
     }
     function drawTree() {
-      const sig = JSON.stringify([kept, folders.map((f) => f.id), [...opened], [...kids], trash.on, trash.folder]);
+      const sig = JSON.stringify([kept, folders.map((f) => f.id), [...opened], [...kids], trash.on, trash.folder, treeRenaming]);
       if (sig === treeDrawn) return;
+      if (treeRenaming && treeDrawn && tree.querySelector(".fm-rename")) return;   // a name being typed is not redrawn under the cursor
       treeDrawn = sig;
       const had = tree.contains(document.activeElement);
       const rows = [];
@@ -5078,7 +5140,7 @@
           h("div", { class: "body" }, h("div", { class: "fm-wrap" }, tree, box), foot, status, picker, dirPicker)));   // a red message goes below the footer line, not above the page
         busy = false; load();
       },
-      async poll() { if (!document.querySelector("dialog[open]") && !progress && !document.querySelector(".cv-menu")) await load(); },
+      async poll() { if (!document.querySelector("dialog[open]") && !progress && !jobs.size && !document.querySelector(".cv-menu")) await load(); },
       poll_ms: 5000,
     };
   })();

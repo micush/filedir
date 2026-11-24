@@ -1,8 +1,12 @@
 # Changelog
 
-## [55] - 2026-11-24 — Enter in a dialog does what the button does
+## [56] - 2026-11-24 — Dialogs, sorting and renaming in the file manager
 
 ### Fixed
+- **Several transfers at once no longer fight over the footer line.** Each upload, fetch from a web address, and copy or move has its own line (with its own Cancel); before, they overwrote one another, so the text flipped between them.
+- **Right-click ▸ Delete works on the matches of the filter** (one or several, also from different synced folders). Rename is still done in the folder itself (Show in folder).
+- **Click a column header to sort the list** (Name, Size, Modified, Node; a second click reverses it, ▲/▼ shows which). Folders stay above files. Not in the trash, which stays newest first.
+- **Folders in the left pane can be renamed in place**, as files and folders in the right pane can: Rename in the menu, F2 on the focused folder. The open folder and the way to it follow the new name.
 - **The folder menus say "Upload", "New" and "Paste"**, not "Upload here", "New here" and "Paste here" (the folder is the one that was right-clicked).
 - **Pressing Enter in a dialog with a text box (New folder, New file, Rename, …) closed it without doing anything.** Enter pressed the first button of the dialog, which is Cancel, so the name was thrown away and only a click on the Create / Save button worked. Enter now presses the button that does it.
 - **A reload that was asked for while another one was running was dropped.** The file list reloads after every action; if the running reload had read the list before the change, the list stayed as it was until the next refresh. It now runs again as soon as the running one is done.

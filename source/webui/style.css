@@ -941,6 +941,8 @@ header.fm-head input.fm-filter { width: 100%; }
 .fm-box .empty { padding: 2rem; text-align: center; color: var(--muted); }
 table.fm th, table.fm td { padding: .4rem .7rem; text-align: left; }
 table.fm th.num, table.fm td.num { text-align: right; }
+table.fm thead th.sortable { cursor: pointer; user-select: none; }
+table.fm thead th.sortable:hover { color: var(--text); }
 table.fm thead th { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); z-index: 1; }
 table.fm tr.fm-row { cursor: default; user-select: none; }
 table.fm tr.fm-row:hover, table.fm tr.fm-row:focus-visible { background: var(--surface-2); outline: none; }
@@ -960,6 +962,7 @@ dialog.fm-dialog { width: min(60rem, calc(100vw - 2rem)); }
 .fsite-main { max-width: 80rem; margin: 1rem auto; padding: 0 1rem; }
 
 table.fm input.fm-rename { width: min(32rem, 90%); font: inherit; padding: .05rem .3rem; margin: -.1rem 0; box-sizing: border-box; }
+.fm-tree input.fm-rename { width: 9rem; max-width: 100%; font: inherit; padding: 0 .25rem; box-sizing: border-box; }
 
 .trash-dialog { min-width: min(46rem, 94vw); }
 .trash-list { max-height: 60vh; overflow: auto; margin: .5rem 0; }
