@@ -4428,6 +4428,7 @@
     const sro = () => !!(state.session && state.session.read_only);   // a read-only account
     const viewing = () => !!state.target && state.target !== CLUSTER && !isGw();   // the Node menu picked another node: its copy is looked at, not changed
     const ro = () => sro() || viewing();
+    const canDelete = () => !ro() && !trash.on;   // also from a list of matches: they are deleted where they are
     const canEdit = () => !ro() && !searching() && !trash.on;   // a list of matches is for finding: change things where they are
     const join = (a, b) => (a ? a + "/" : "") + b;
     const parent = (p) => p.split("/").slice(0, -1).join("/");
@@ -4922,7 +4923,7 @@
       if (k === "Enter") { open(e); return; }
       if (k === "ContextMenu" || (k === "F10" && ev.shiftKey)) { ev.preventDefault(); ctx(ev, e, i); return; }
       if (k === "Delete" && trash.on) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } deleteTrash(selected()); return; }
-      if (k === "Delete" && canEdit()) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } removeMany(selected()); return; }
+      if (k === "Delete" && canDelete()) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } removeMany(selected()); return; }
       if (k === "Escape") { sel.clear(); paintSel(); return; }
       if ((k === "a" || k === "A") && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); selectAll(); return; }
       let to = -1;
@@ -5028,6 +5029,7 @@
           if (ev.target.tagName === "INPUT") return;
           if (ev.key === "Enter") go(fo, p);
           else if (ev.key === "F2" && p) { ev.preventDefault(); treeRename(fo, p); }
+          else if (ev.key === "Delete" && p && canDelete()) { ev.preventDefault(); removeMany([{ folder: fo, path: p, name: p.split("/").pop(), kind: "dir" }], fo); }
           else if (ev.key === "ArrowRight" && !isOpen) toggle(fo, p);
           else if (ev.key === "ArrowLeft" && isOpen) toggle(fo, p);
           else if (ev.key === "ContextMenu" || (ev.key === "F10" && ev.shiftKey)) treeMenu(fo, p)(ev);
@@ -5145,7 +5147,10 @@
         box = h("div", { class: "fm-box", tabindex: "-1",
           oncontextmenu: (e) => { if (e.target === box || e.target.classList.contains("empty") || (e.target.closest && !e.target.closest("tr.fm-row") && !e.target.closest("thead"))) spaceMenu()(e); },
           onclick: (e) => { if (e.target === box || e.target.classList.contains("empty") || e.target.classList.contains("fm-fill")) { sel.clear(); paintSel(); } },
-          onkeydown: (e) => { if ((e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey) && e.target === box) { e.preventDefault(); selectAll(); } } });
+          onkeydown: (e) => {
+            if ((e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey) && e.target === box) { e.preventDefault(); selectAll(); }
+            else if (e.key === "Delete" && e.target === box && sel.size) { e.preventDefault(); if (trash.on) deleteTrash(selected()); else if (canDelete()) removeMany(selected()); }   // the selection, with the focus on the list itself (after Ctrl+A, say)
+          } });
         picker = h("input", { type: "file", multiple: true, class: "hidden", "aria-label": "Choose files to upload" });
         dirPicker = h("input", { type: "file", multiple: true, webkitdirectory: true, class: "hidden", "aria-label": "Choose a folder to upload" });
         // dropping files and folders from the computer, on the list, on a folder in it, or on a folder in the tree

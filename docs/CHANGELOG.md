@@ -1,5 +1,10 @@
 # Changelog
 
+## [73] - 2026-11-24 — The Delete key
+
+### Fixed
+- **The Delete key deletes what is selected in more places.** It worked only with the focus on a row of an ordinary list. Now it also works with the focus on the list itself (after Ctrl+A, or a click on its empty space), on the matches of a filter, and on a folder of the tree (that folder). It asks first, as the menu does, and the files go to the trash of each node.
+
 ## [72] - 2026-11-24 — Large icons
 
 ### Added
