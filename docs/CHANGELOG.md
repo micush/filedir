@@ -1,5 +1,11 @@
 # Changelog
 
+## [64] - 2026-11-24 — A backup no longer holds the synced files
+
+### Changed
+- **The backup archive left out the settings' size and took the files instead.** It packed the whole state directory, and the synced folders live inside it (`/var/lib/filedir/folders/<id>`), so every archive held every synced file under 256 MB, each folder's index and its trash (30 days of deleted copies, which is why the archives grew by the gigabyte after a big delete). `folders/` is now left out: a backup holds the settings, users, keys and certificates, a few MB. The files are on every node, and a restore leaves a node's own `folders/` alone.
+- **Configure ▸ Backup ▸ Contents ▸ "Include the synced files"** puts them back in (`include_files` in the backup settings), for a single node or a copy outside the cluster; files over 256 MB are still left out.
+
 ## [63] - 2026-11-24 — Look at another node's copy of the folders
 
 ### Added

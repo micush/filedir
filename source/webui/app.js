@@ -3095,7 +3095,12 @@
     restoreUI();
     show();
 
-    const el = h("div", {}, schedule, servers, restore);
+    // what is in an archive: the settings and the state; the synced files only when asked for (they are on every node)
+    const inclBox = h("input", { type: "checkbox", id: "bk-incl", checked: !!bcfg.include_files });
+    const contents = section("Contents",
+      h("p", { class: "hint" }, "A backup holds this node's settings, users, keys and certificates. The synced files are not in it: they are on every node, and a folder's trash is a copy that comes back by itself."),
+      h("label", { class: "chk", for: "bk-incl" }, inclBox, " Include the synced files (and their trash) as well. The archive is then as big as the folders, and files over 256 MB are left out."));
+    const el = h("div", {}, schedule, servers, contents, restore);
     el.addEventListener("change", later);
     return {
       el,
@@ -3103,6 +3108,7 @@
         const b = bcfg.password ? { password: bcfg.password } : {};   // the old archive password, kept to open old archives
         const ts = rows().map((tr) => tr._get()).filter((t) => Object.keys(t).length);
         if (ts.length) b.targets = ts;
+        if (inclBox.checked) b.include_files = true;
         return Object.keys(b).length ? b : undefined;
       },
     };

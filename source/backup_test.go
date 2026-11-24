@@ -84,7 +84,7 @@ func TestBackupArchiveHoldsTheStateAndLeavesOutTheRest(t *testing.T) {
 		"pairs/x": "P", "backup/work/x.part": "W", "backup/status.json": "S",
 	})
 	var buf bytes.Buffer
-	n, err := writeBackupArchive(&buf, "pw-12345678", state, filepath.Join(state, "filedir.conf"), "ns1", time.Now())
+	n, err := writeBackupArchive(&buf, "pw-12345678", state, filepath.Join(state, "filedir.conf"), "ns1", time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestBackupRestoreReplacesAndKeepsWhatWasThere(t *testing.T) {
 	state := filepath.Join(base, "state")
 	writeTree(t, state, map[string]string{"filedir.conf": "NEW", "versions/1.json": "V1"})
 	var buf bytes.Buffer
-	if _, err := writeBackupArchive(&buf, "pw-12345678", state, filepath.Join(state, "filedir.conf"), "ns1", time.Now()); err != nil {
+	if _, err := writeBackupArchive(&buf, "pw-12345678", state, filepath.Join(state, "filedir.conf"), "ns1", time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
 	file := filepath.Join(base, "x"+backupExt)
@@ -208,7 +208,7 @@ func TestBackupPasswordHasNoLimits(t *testing.T) {
 		state := t.TempDir()
 		writeTree(t, state, map[string]string{"filedir.conf": "CONF"})
 		var buf bytes.Buffer
-		if _, err := writeBackupArchive(&buf, pw, state, filepath.Join(state, "filedir.conf"), "ns1", time.Now()); err != nil {
+		if _, err := writeBackupArchive(&buf, pw, state, filepath.Join(state, "filedir.conf"), "ns1", time.Now(), false); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := readBackupArchive(bytes.NewReader(buf.Bytes()), pw, t.TempDir()); err != nil {
@@ -570,7 +570,7 @@ func TestPendingRestoreIsAppliedAtStart(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src")
 	writeTree(t, src, map[string]string{"filedir.conf": "FROM-BACKUP", "webcert/k": "KEY"})
 	var raw bytes.Buffer
-	if _, err := writeBackupArchive(&raw, "pw-12345678", src, filepath.Join(src, "filedir.conf"), "ns1", time.Now()); err != nil {
+	if _, err := writeBackupArchive(&raw, "pw-12345678", src, filepath.Join(src, "filedir.conf"), "ns1", time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
 	state := filepath.Join(t.TempDir(), "state")
@@ -625,7 +625,7 @@ func TestBackupRestoreNeedsNoPassword(t *testing.T) {
 	mk := func(pw string) string {
 		f := filepath.Join(t.TempDir(), "b"+backupExt)
 		var buf bytes.Buffer
-		if _, err := writeBackupArchive(&buf, pw, src, filepath.Join(src, "filedir.conf"), "ns1", time.Now()); err != nil {
+		if _, err := writeBackupArchive(&buf, pw, src, filepath.Join(src, "filedir.conf"), "ns1", time.Now(), false); err != nil {
 			t.Fatal(err)
 		}
 		os.WriteFile(f, buf.Bytes(), 0o600)
@@ -692,5 +692,40 @@ func TestBackupDestStaysInsideTheDirectory(t *testing.T) {
 		if dst, err := backupDest(dir, name); err == nil {
 			t.Errorf("%q was accepted as %q", name, dst)
 		}
+	}
+}
+
+// The synced folders are in the state directory, but a backup holds the settings and state only unless it is asked to keep the files too.
+func TestBackupLeavesOutTheSyncedFilesUnlessAsked(t *testing.T) {
+	state := t.TempDir()
+	for name, data := range map[string]string{"filedir.conf": "{}", "folders/root/a.txt": "hello", "folders/root/.filedir/trash/x": "old", "keep/me": "yes"} {
+		p := filepath.Join(state, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(data), 0o600)
+	}
+	names := func(incl bool) string {
+		var buf bytes.Buffer
+		if _, err := writeBackupArchive(&buf, "pw-12345678", state, filepath.Join(state, "filedir.conf"), "ns1", time.Now(), incl); err != nil {
+			t.Fatal(err)
+		}
+		out := t.TempDir()
+		if _, err := readBackupArchive(&buf, "pw-12345678", out); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		filepath.WalkDir(out, func(p string, d os.DirEntry, _ error) error {
+			if !d.IsDir() {
+				r, _ := filepath.Rel(out, p)
+				got = append(got, r)
+			}
+			return nil
+		})
+		return strings.Join(got, " ")
+	}
+	if got := names(false); strings.Contains(got, "folders") || !strings.Contains(got, "keep/me") {
+		t.Errorf("default archive: %s", got)
+	}
+	if got := names(true); !strings.Contains(got, "folders/root/a.txt") || !strings.Contains(got, "folders/root/.filedir/trash/x") {
+		t.Errorf("archive with the files: %s", got)
 	}
 }

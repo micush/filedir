@@ -69,6 +69,9 @@ type BackupTarget struct {
 // BackupConfig is the "backup" block of the shared settings (Configure ▸ Backup).
 type BackupConfig struct {
 	Targets []BackupTarget `json:"targets,omitempty"`
+	// IncludeFiles puts the synced folders (the state directory's folders/) in the archive too.  Off: the archive holds the settings and
+	// state only, since the files are on every node and the trash is a copy that comes back by itself.
+	IncludeFiles bool `json:"include_files,omitempty"`
 	// Password is what the archives of v184-v187 were sealed with.  It is no longer set or used for new archives; a restore
 	// tries it when an archive does not open without one.
 	Password string `json:"password,omitempty"`
@@ -379,7 +382,7 @@ const backupExternalConf = "_config/"
 // backupSkip says whether a path of the state directory is left out: what is only a copy of something that comes back
 // (staged upgrades, downloaded block lists, statistics), what belongs to this run of the daemon (sessions, the log) and
 // the backup's own working files.
-func backupSkip(rel string) bool {
+func backupSkip(rel string, includeFiles bool) bool {
 	top := rel
 	if i := strings.IndexByte(rel, '/'); i >= 0 {
 		top = rel[:i]
@@ -387,6 +390,8 @@ func backupSkip(rel string) bool {
 	switch top {
 	case "update", "blocklists", "pairs", "capture":
 		return true
+	case "folders":
+		return !includeFiles // the synced files (and their index and trash) are on the other nodes: only kept when asked for
 	}
 	switch {
 	case rel == sessionsFile, rel == "stats.json.gz":
@@ -410,7 +415,7 @@ func tarAdd(tw *tar.Writer, name string, mode int64, data []byte, mod time.Time)
 }
 
 // writeBackupArchive packs the state directory (and the configuration file, when it is somewhere else) into w, sealed.
-func writeBackupArchive(w io.Writer, password, stateDir, confFile, node string, now time.Time) (files int, err error) {
+func writeBackupArchive(w io.Writer, password, stateDir, confFile, node string, now time.Time, includeFiles bool) (files int, err error) {
 	sw, err := newSealWriter(w, password)
 	if err != nil {
 		return 0, err
@@ -440,7 +445,7 @@ func writeBackupArchive(w io.Writer, password, stateDir, confFile, node string, 
 		if rel == "." {
 			return nil
 		}
-		if backupSkip(rel) {
+		if backupSkip(rel, includeFiles) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -1125,7 +1130,7 @@ func (e *BackupEngine) backup(c *BackupConfig, targets []BackupTarget) error {
 	if err != nil {
 		return fail(err)
 	}
-	files, err := writeBackupArchive(f, "", e.stateDir, e.confFile, e.nodeName(), began)
+	files, err := writeBackupArchive(f, "", e.stateDir, e.confFile, e.nodeName(), began, c.IncludeFiles)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
