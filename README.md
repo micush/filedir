@@ -234,7 +234,7 @@ A folder is a row in Configure ▸ Folders (`settings.files.folders`):
 
 A change is noticed by a scan every 30 s, and by an immediate scan after anything done in the Files page. Peers are asked for changes every 10 s. A new file normally reaches every node within about 40 s.
 
-**How a file moves.** Files are split into blocks and hashed. A node that learns of a newer version asks every peer that holds it, and for a file of 8 blocks or more every peer that is pulling it too (each is asked once a second which blocks it has), for blocks, up to 16 at a time from each, takes each block from whichever peer answers, checks its hash and retries elsewhere on failure. The file is built under `.filedir/tmp` and then swapped in. If the file changed locally in the meantime, the pull is abandoned and treated as a conflict.
+**How a file moves.** Files are split into blocks and hashed (BLAKE3, with vector code for x86-64, in plain Go elsewhere). A node that learns of a newer version asks every peer that holds it, and for a file of 8 blocks or more every peer that is pulling it too (each is asked once a second which blocks it has), for blocks, up to 16 at a time from each, takes each block from whichever peer answers, checks its hash and retries elsewhere on failure. The file is built under `.filedir/tmp` and then swapped in. If the file changed locally in the meantime, the pull is abandoned and treated as a conflict.
 
 **Conflicts.** Two nodes that change a file at the same time end up with the same winning file, and the other version is kept as `name.sync-conflict-DATE-TIME-NODE.ext` in the same folder. A change beats a delete. Otherwise the later modification time wins.
 

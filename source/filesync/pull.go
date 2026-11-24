@@ -78,7 +78,7 @@ func readBlockBuf(p string, off int64, size int, hash Hash, pooled bool) ([]byte
 		}
 		return nil, nil, fmt.Errorf("%w: %v", ErrChanged, err)
 	}
-	if sha256.Sum256(buf) != hash {
+	if sumBlock(buf) != hash {
 		if rel != nil {
 			rel()
 		}
@@ -509,13 +509,13 @@ func (f *Folder) pullFile(fi, l FileInfo, p string, conflict bool, src Source) (
 		var data []byte
 		if lb, ok := have[b.Hash]; ok && lb.Size == b.Size {
 			buf := make([]byte, b.Size)
-			if _, err := old.ReadAt(buf, lb.Off); err == nil && sha256.Sum256(buf) == b.Hash {
+			if _, err := old.ReadAt(buf, lb.Off); err == nil && sumBlock(buf) == b.Hash {
 				data = buf
 			}
 		}
 		if data == nil && b.Off+int64(b.Size) <= psize { // a block that an earlier try left in the partial file, if it is whole
 			buf := make([]byte, b.Size)
-			if _, err := tf.ReadAt(buf, b.Off); err == nil && sha256.Sum256(buf) == b.Hash {
+			if _, err := tf.ReadAt(buf, b.Off); err == nil && sumBlock(buf) == b.Hash {
 				resumed++
 				if fl != nil {
 					fl.mark(bi)

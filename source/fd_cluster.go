@@ -54,6 +54,9 @@ type fdFolder struct {
 	trashBusy  bool
 	rescanning atomic.Bool
 	svc        *fdService
+	converting bool            // a stand-in while the index is converted to the current block hash (convert); f is nil
+	convFailed atomic.Bool     // the conversion did not work
+	dbDir      string          // where the index is, for the stand-in
 	told       bool            // a notice to the other nodes is going out or waiting (tellPeers)
 	tellDue    bool            // a change came while it was
 	pulling    map[string]bool // peers being asked now because they said they have something new (syncSoon)
@@ -203,8 +206,11 @@ func (s *fdService) reconcile() {
 		f.close()
 	}
 	for id, fc := range want {
-		if s.get(id) != nil {
-			continue
+		if ex := s.get(id); ex != nil {
+			// a conversion that is done is replaced by the folder itself
+			if !ex.converting || ex.convFailed.Load() || filesync.Migrating(ex.dbDir) {
+				continue
+			}
 		}
 		f, err := s.open(fc)
 		s.mu.Lock()
@@ -237,6 +243,9 @@ func (s *fdService) open(fc FolderCfg) (*fdFolder, error) {
 		Logf:  func(format string, args ...any) { warnf("files: "+fc.ID+": "+format, args...) },
 	}
 	f, err := filesync.Open(cfg)
+	if errors.Is(err, filesync.ErrLegacyIndex) {
+		return s.convert(fc, cfg), nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -244,6 +253,31 @@ func (s *fdService) open(fc FolderCfg) (*fdFolder, error) {
 	nf.watch = startFdWatch(nf)
 	go nf.scanNow() // what is there is known at once, not at the next round
 	return nf, nil
+}
+
+// convert makes the index of a folder that was written with SHA-256 block hashes (before version 81) one with the current hash.  It reads
+// every file once, which takes as long as that takes, so it runs on its own; what the folder shows meanwhile is its progress, and it is
+// opened when it is done (reconcile).  The nodes that have not got to it yet are not synced with: they are told so (Index).
+func (s *fdService) convert(fc FolderCfg, cfg filesync.Config) *fdFolder {
+	ph := &fdFolder{cfg: fc, pct: cfg.MaxUsedPct, svc: s, converting: true, dbDir: cfg.DBDir, scanErr: "Converting the index to the new block hash"}
+	if filesync.Migrating(cfg.DBDir) {
+		return ph
+	}
+	go func() {
+		err := filesync.MigrateIndex(cfg, func(done, total int) {
+			ph.mu.Lock()
+			ph.scanErr = fmt.Sprintf("Converting the index to the new block hash (%s): %d of %d files", filesync.HashName, done, total)
+			ph.mu.Unlock()
+		})
+		if err != nil {
+			warnf("files: %s: converting the index: %v", fc.ID, err)
+			ph.mu.Lock()
+			ph.scanErr = "Converting the index to the new block hash failed: " + err.Error()
+			ph.mu.Unlock()
+			ph.convFailed.Store(true)
+		}
+	}()
+	return ph
 }
 
 func (s *fdService) scanAll() {
@@ -423,11 +457,13 @@ func (x *fdSource) get() ClusterPeer {
 type fdIndexReq struct {
 	Folder string `json:"folder"`
 	After  int64  `json:"after"`
+	Alg    string `json:"alg,omitempty"` // the hash of the blocks (filesync.HashName): a node that does not say is on SHA-256
 }
 
 type fdIndexReply struct {
 	Entries []filesync.FileInfo `json:"entries"`
 	Max     int64               `json:"max"`
+	Alg     string              `json:"alg,omitempty"`
 }
 
 type fdBlockReq struct {
@@ -443,9 +479,12 @@ func (x *fdSource) Index(folder string, after int64) ([]filesync.FileInfo, int64
 	ctx, cancel := context.WithTimeout(context.Background(), fdPeerTimeout)
 	defer cancel()
 	var r fdIndexReply
-	qb, _ := json.Marshal(fdIndexReq{folder, after})
+	qb, _ := json.Marshal(fdIndexReq{folder, after, filesync.HashName})
 	if err := cl.callFiles(ctx, x.get(), "/cluster/files/index", qb, func(rd io.Reader) error { return json.NewDecoder(rd).Decode(&r) }, fdPeerTimeout); err != nil {
 		return nil, 0, err
+	}
+	if r.Alg != filesync.HashName { // an older node: its blocks are hashed with SHA-256, and ours could not be checked against them
+		return nil, 0, fmt.Errorf("%s still hashes blocks with SHA-256 and this node uses %s: it has to be updated to the same version of filedir", x.get().Addr, filesync.HashName)
 	}
 	x.svc.note(x.get().NodeID, folder, r.Entries)
 	return r.Entries, r.Max, nil
@@ -850,6 +889,10 @@ func (c *Cluster) handleFilesIndex(rw http.ResponseWriter, r *http.Request, call
 		jsonError(rw, http.StatusBadRequest, "bad request")
 		return
 	}
+	if q.Alg != filesync.HashName {
+		jsonError(rw, http.StatusConflict, "this node hashes blocks with "+filesync.HashName+" (filedir 81 or later) and you do not: update this node to the same version of filedir as the others")
+		return
+	}
 	f := c.files.get(q.Folder)
 	if f == nil || f.f == nil {
 		jsonError(rw, http.StatusNotFound, "no such folder here")
@@ -860,7 +903,7 @@ func (c *Cluster) handleFilesIndex(rw http.ResponseWriter, r *http.Request, call
 		es = es[:fdIndexBatch]
 		max = es[len(es)-1].Seq
 	}
-	b, _ := json.Marshal(fdIndexReply{Entries: es, Max: max})
+	b, _ := json.Marshal(fdIndexReply{Entries: es, Max: max, Alg: filesync.HashName})
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Write(b)
 }

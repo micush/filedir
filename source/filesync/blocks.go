@@ -1,7 +1,6 @@
 package filesync
 
 import (
-	"crypto/sha256"
 	"io"
 )
 
@@ -35,7 +34,7 @@ func HashBlocks(r io.Reader, size int64) ([]Block, int64, error) {
 	for {
 		n, err := io.ReadFull(r, buf)
 		if n > 0 {
-			blocks = append(blocks, Block{Off: off, Size: int32(n), Hash: sha256.Sum256(buf[:n])})
+			blocks = append(blocks, Block{Off: off, Size: int32(n), Hash: sumBlock(buf[:n])})
 			off += int64(n)
 		}
 		if err == io.EOF || err == io.ErrUnexpectedEOF {

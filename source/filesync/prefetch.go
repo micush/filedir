@@ -1,7 +1,6 @@
 package filesync
 
 import (
-	"crypto/sha256"
 	"sync"
 )
 
@@ -118,7 +117,7 @@ func (p *prefetcher) Block(folder, name string, off int64, size int, h Hash) ([]
 		p.held -= len(d)
 		p.cond.Broadcast()
 		p.mu.Unlock()
-		if len(d) == size && sha256.Sum256(d) == h { // a bad batch is not trusted: ask the usual way
+		if len(d) == size && sumBlock(d) == h { // a bad batch is not trusted: ask the usual way
 			return d, nil
 		}
 	} else {

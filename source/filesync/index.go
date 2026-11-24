@@ -23,9 +23,11 @@ type index struct {
 	lines   int
 	sg      syncGroup  // shares journal syncs between writers
 	snap    []FileInfo // the sorted copy snapshot hands out, kept until the index changes (nil: not built)
+	alg     string     // the hash of the blocks, as the journal's first line says ("": SHA-256, from before it was said)
 }
 
 type journalLine struct {
+	Alg    string    `json:"alg,omitempty"` // the hash of the blocks in the entries (HashName): the first line of a journal; none: SHA-256
 	File   *FileInfo `json:"f,omitempty"`
 	Drop   string    `json:"drop,omitempty"` // an entry removed for good (an old tombstone)
 	Cursor *cursorLn `json:"c,omitempty"`
@@ -36,7 +38,12 @@ type cursorLn struct {
 	Seq  int64  `json:"s"`
 }
 
-func openIndex(dir string) (*index, error) {
+// ErrLegacyIndex is what Open says of an index made when the blocks were hashed with SHA-256: MigrateIndex makes it a current one.
+var ErrLegacyIndex = errors.New("filesync: the index has SHA-256 block hashes and has to be converted")
+
+func openIndex(dir string) (*index, error) { return loadIndex(dir, false) }
+
+func loadIndex(dir string, allowLegacy bool) (*index, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -56,15 +63,30 @@ func openIndex(dir string) (*index, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+	if ix.lines > 0 && ix.alg != HashName && !allowLegacy {
+		return nil, ErrLegacyIndex
+	}
 	var err error
 	if ix.jf, err = os.OpenFile(ix.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600); err != nil {
 		return nil, err
+	}
+	if ix.lines == 0 { // a new index says what its hashes are, in its first line
+		b, _ := json.Marshal(journalLine{Alg: HashName})
+		if _, err := ix.jf.Write(append(b, '\n')); err != nil {
+			ix.jf.Close()
+			return nil, err
+		}
+		ix.jf.Sync()
+		ix.alg = HashName
+		ix.lines = 1
 	}
 	return ix, nil
 }
 
 func (ix *index) apply(ln journalLine) {
 	switch {
+	case ln.Alg != "":
+		ix.alg = ln.Alg
 	case ln.File != nil:
 		ix.snap = nil
 		ix.files[ln.File.Name] = ln.File
@@ -121,6 +143,7 @@ func (ix *index) compact() error {
 		w.WriteByte('\n')
 		n++
 	}
+	write(journalLine{Alg: HashName}) // the hash of every block in the entries that follow: the caller has them in it
 	for _, k := range names {
 		write(journalLine{File: ix.files[k]})
 	}

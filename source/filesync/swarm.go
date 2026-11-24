@@ -1,7 +1,6 @@
 package filesync
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"math/rand"
 	"os"
@@ -340,7 +339,7 @@ func (f *Folder) fetchOne(tf *os.File, fi FileInfo, b Block, s Source) error {
 		return err
 	}
 	_, recycle := s.(BlockRecycler)
-	if len(d) != int(b.Size) || sha256.Sum256(d) != b.Hash {
+	if len(d) != int(b.Size) || sumBlock(d) != b.Hash {
 		if recycle {
 			PutBuf(d)
 		}

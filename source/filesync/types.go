@@ -1,7 +1,6 @@
 package filesync
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -9,12 +8,12 @@ import (
 	"strings"
 )
 
-// Hash is the SHA-256 of a block.
-type Hash [sha256.Size]byte
+// Hash is the hash of a block (HashName).
+type Hash [32]byte
 
 func (h Hash) MarshalText() ([]byte, error) { return []byte(hex.EncodeToString(h[:])), nil }
 func (h *Hash) UnmarshalText(b []byte) error {
-	if len(b) != 2*sha256.Size {
+	if len(b) != 2*len(Hash{}) {
 		return errors.New("filesync: a block hash is 64 hex digits")
 	}
 	_, err := hex.Decode(h[:], b)
