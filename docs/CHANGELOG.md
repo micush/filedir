@@ -1,5 +1,8 @@
 # Changelog
 
+## [93]
+- An upload sends twelve files at once, not three (never more than three big ones among them). Every small file costs a round trip and a write on the node, so three at a time left the node waiting. Measured against a node with nothing between (1,500 files of 20 KB, two cores): 3 at a time 775 files a second, 8 at a time 912, 16 at a time 999, 32 at a time 1,219. Over a line with some distance the gain is larger, since each request then waits longer for its answer.
+
 ## [92]
 - An upload that sat at "79,654 of 79,655" for ever: one request had gone quiet and nothing in the page ever gave up on it. Every request of an upload (a small file, or a piece of a big one) is now stopped after two minutes without an answer and sent again (up to five times, then the upload stops and names the file). And the footer says which file is holding the upload up ("path: waiting for the node, 40 s") once one has taken more than ten seconds, redrawn every two seconds, so a stuck upload says what it is waiting for. Making a folder is not covered by the two minutes yet.
 

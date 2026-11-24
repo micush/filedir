@@ -4682,6 +4682,9 @@
       const txt = h("span", {}), more = h("div", {}), box = h("div", {}, h("span", {}, txt, " ", stopBtn(cancel)), more);
       let shown = false, last = 0, timer = null;
       const started = new Map();   // the files that are going up and when each began
+      let bigNow = 0; const bigWait = [];   // at most three big files (pieces of 8 MB) at a time
+      const takeBig = () => bigNow < 3 ? (bigNow++, Promise.resolve()) : new Promise((ok) => bigWait.push(ok));
+      const freeBig = () => { const next = bigWait.shift(); if (next) next(); else bigNow--; };
       const ticker = setInterval(() => { if (!cancelled) paint(); }, 2000);   // a file that has gone quiet says how long it has been
       const paint = () => {
         timer = null; last = Date.now();
@@ -4701,11 +4704,12 @@
         const p = join(base, it.path), file = it.file;
         if (total === 1) { live.set(it, it.path + " (" + size(file.size) + ")"); tell(); }   // a single small file is gone before it could say more
         if (file.size < UPLOAD_RESUME_MIN) { await apiUploadRetry("/api/files/upload?" + q({ path: p }, fo), file, (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal); live.delete(it); return; }
+        await takeBig();   // twelve small files at once are fine; twelve big ones would fight over the disk and the line
         try {
           await apiUploadResumable(fo, p, file,
             (n, tot) => { live.set(it, it.path + ": " + size(n) + " of " + size(tot) + " (" + Math.floor((n * 100) / tot) + "%)"); tell(); },
             (ms) => { live.set(it, it.path + ": connection lost, trying again in " + Math.round(ms / 1000) + " s"); tell(); }, ctl.signal);
-        } finally { live.delete(it); }
+        } finally { live.delete(it); freeBig(); }
       };
       tell();
       const worker = async () => {
@@ -4720,7 +4724,7 @@
           started.delete(it);
         }
       };
-      await Promise.all([worker(), worker(), worker()]);   // a few at a time: many small files are not left waiting for one big one
+      await Promise.all(Array.from({ length: 12 }, worker));   // a dozen at a time: with a round trip for every small file, three left the node idle (a test: 3 workers 775 files/s, 8 912, 16 999, 32 1,219, on a node with no distance to it)
       clearInterval(ticker); clearTimeout(timer);
       endJob(jk);
       if (cancelled) { clear(status).append(h("div", { class: "notice", role: "status" }, "Upload cancelled: " + done.toLocaleString() + " of " + total.toLocaleString() + " were uploaded; the rest was not.")); }
