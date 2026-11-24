@@ -1,5 +1,9 @@
 # Changelog
 
+## [97]
+
+- Ignore patterns now cover everything under an ignored folder. Before, a pattern such as `.git/` was matched against the folder itself only, so a file inside it that arrived from another node (or an upload) was accepted, never indexed here, and then failed with "the file changed here since the last scan". Such files are now left out in every direction, like the folder.
+
 ## [96]
 
 - Configure ▸ Folders: the folders table now runs the full width of the card, so its right edge lines up with the fields under it.

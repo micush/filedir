@@ -703,3 +703,17 @@ func TestWriteFileRespectsMaxSize(t *testing.T) {
 		t.Fatal("a too large file was kept")
 	}
 }
+
+func TestIgnoredUnderIgnoredFolder(t *testing.T) {
+	f := &Folder{cfg: Config{Ignore: []string{"*.tmp", ".git/"}}}
+	for name, isDir := range map[string]bool{".git": true, "a/.git": true, "a/.git/objects/pack/pack-1.pack": false, "x/y.tmp": false, "x.tmp/z": false} {
+		if !f.ignored(name, isDir) {
+			t.Errorf("%q should be ignored", name)
+		}
+	}
+	for name, isDir := range map[string]bool{"a/.gitignore": false, "a/git/x": false, ".git": false, "a/b": true} {
+		if f.ignored(name, isDir) {
+			t.Errorf("%q should not be ignored", name)
+		}
+	}
+}

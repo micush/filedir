@@ -117,6 +117,20 @@ func (f *Folder) marker() error {
 
 // ignored says whether a name is left out of the folder by the ignore patterns.
 func (f *Folder) ignored(name string, isDir bool) bool {
+	if len(f.cfg.Ignore) == 0 {
+		return false
+	}
+	// a name under an ignored folder is left out too: the scan never goes into it, so a file from a peer (or an upload) that
+	// lands there would be one this node never indexes, and would then be refused as "changed here since the last scan"
+	for i := 0; i < len(name); i++ {
+		if name[i] == '/' && f.ignoredName(name[:i], true) {
+			return true
+		}
+	}
+	return f.ignoredName(name, isDir)
+}
+
+func (f *Folder) ignoredName(name string, isDir bool) bool {
 	for _, p := range f.cfg.Ignore {
 		dirOnly := strings.HasSuffix(p, "/")
 		p = strings.TrimSuffix(p, "/")
