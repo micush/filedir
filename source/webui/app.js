@@ -5331,7 +5331,7 @@
           lines.push(speedRes.disk.error ? "Disk of " + me + ": " + speedRes.disk.error : "Disk write on " + me + " (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
         }
       }
-      const tip = "Measures " + me + " as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast " + me + " hashes and writes. It moves a few hundred megabytes from each node.";
+      const tip = "Measures " + me + " as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast " + me + " hashes and writes. It moves about half a gigabyte from each node over the channel, and writes two gigabytes for the whole path.";
       const run = async (e) => {
         e.preventDefault();
         if (speedBusy) return;

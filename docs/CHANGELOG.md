@@ -1,5 +1,8 @@
 # Changelog
 
+## [86]
+- Test speed writes 2 GB for the whole path (and for the disk line), not 512 MB: with a node's memory of a few GB, a small write is taken by the cache and the disk is never asked to keep up, which a big file's replication meets. On two nodes the whole path (hash and disk) of 512 MB went as fast as the channel (5.2 against 5.4 Gbit/s) while the disk alone, synced, wrote 260-450 MB/s, which is where the replications of big files stopped. It needs room for twice the 2 GB, and leaves a node out of the test when 60 s have gone (a relayed request is cut off at 90 s).
+
 ## [85]
 - Test speed measures the whole path for each other node, as well as the channel alone: it fetches the data again as a replication does, with every block of 4 MB checked against its hash (BLAKE3) and written to a file in the first folder's own directory, which is synced at the end and removed. The line for a node reads "From A to B: 6,181 Mbps over the channel, 3,100 Mbps with the hash and the disk". The data is now the same on every node (made from a fixed seed), so the receiver can check it; a block that comes wrong is reported. A node with less than four times the test's size of room on its disk skips the second part and says so. This and the other numbers vary a good deal from run to run on hosts that are shared (BLAKE3 on one node went 874, then 290 MB/s), so run it a few times.
 

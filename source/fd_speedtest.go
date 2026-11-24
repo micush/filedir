@@ -25,7 +25,8 @@ import (
 
 const (
 	fdSpeedStreams = 16 // requests at once to a node, as many as a replication uses
-	fdSpeedMaxMB   = 4096
+	fdSpeedMaxMB   = 8192
+	fdSpeedBudget  = 60 * time.Second // no new node is started after this long (a relayed request is cut off at 90 s)
 )
 
 var (
@@ -111,26 +112,35 @@ func (s *fdService) speedTest(ctx context.Context, mb int) fdSpeedResult {
 	if mb < fdSpeedStreams {
 		mb = fdSpeedStreams
 	}
+	// The whole path writes four times as much as the channel is tried with: a small file is taken by the memory the disk has in front of
+	// it, and a big one is not, which is what a replication of a big file meets.
+	full := mb * 4
 	dir, room := s.speedDir()
+	deadline := time.Now().Add(fdSpeedBudget)
 	for _, p := range s.otherPeers() {
 		if ctx.Err() != nil {
 			break
 		}
 		sp := fdSpeedPeer{Node: p.NodeID, Addr: p.Addr}
+		if time.Now().After(deadline) {
+			sp.Error = "left out: the test was taking too long"
+			res.Peers = append(res.Peers, sp)
+			continue
+		}
 		sp.Mbit, sp.Error = s.speedPull(ctx, p, mb, nil)
 		if sp.Error == "" {
 			if dir == "" {
 				sp.FullErr = "no folder is open here"
-			} else if room < uint64(mb)<<20*4 {
+			} else if room < uint64(full)<<20*2 {
 				sp.FullErr = "not enough room to test"
 			} else {
-				sp.Full, sp.FullErr = s.speedPull(ctx, p, mb, &dir)
+				sp.Full, sp.FullErr = s.speedPull(ctx, p, full, &dir)
 			}
 		}
 		res.Peers = append(res.Peers, sp)
 	}
 	res.Hash.Blake3, res.Hash.SHA256 = fdSpeedHash()
-	s.speedDisk(&res, mb)
+	s.speedDisk(&res, full)
 	return res
 }
 
