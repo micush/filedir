@@ -257,21 +257,30 @@
 
   // A big file goes up in pieces that can be taken up again: when the connection drops, it asks the server how much is there and sends the
   // rest, waiting a little longer each time (up to 15 s), for about ten minutes in all.  A small file is sent again whole.
-  const UPLOAD_PIECE = 8 << 20, UPLOAD_RESUME_MIN = 4 << 20;
+  const UPLOAD_PIECE = 8 << 20, UPLOAD_RESUME_MIN = 4 << 20, UPLOAD_QUIET = 120000;   // a request that has not finished in two minutes is made again
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const transient = (e) => e.message !== "unauthenticated" && (!e.status || (e.status >= 500 && e.status !== 507 && e.status !== 501) || e.status === 408 || e.status === 429);   // no status: the network; a full disk is not going to pass
+  // a signal that stops a request that has gone quiet: it fires when the person's own signal does, or after ms
+  function withTimeout(signal, ms) {
+    const c = new AbortController(), t = setTimeout(() => c.abort(), ms), on = () => c.abort();
+    if (signal) { if (signal.aborted) c.abort(); else signal.addEventListener("abort", on); }
+    return { signal: c.signal, done: () => { clearTimeout(t); if (signal) signal.removeEventListener("abort", on); } };
+  }
   async function apiUploadResumable(fo, path, file, onProgress, onWait, signal) {
     let id = null, off = 0, tries = 0;
     for (;;) {
       try {
         if (!id) { const d = (await api("POST", "/api/files/upload/begin", { folder: fo, path, size: file.size })).data; id = d.id; off = d.offset; }
         while (off < file.size) {
-          const res = await fetch(route("/api/files/upload/chunk?id=" + id + "&offset=" + off), {
-            method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.session.csrf },
-            body: file.slice(off, Math.min(off + UPLOAD_PIECE, file.size)), signal,
-          });
-          let data = null;
-          try { data = await res.json(); } catch (_) { /* not JSON */ }
+          const wt = withTimeout(signal, UPLOAD_QUIET);
+          let res, data = null;
+          try {
+            res = await fetch(route("/api/files/upload/chunk?id=" + id + "&offset=" + off), {
+              method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.session.csrf },
+              body: file.slice(off, Math.min(off + UPLOAD_PIECE, file.size)), signal: wt.signal,
+            });
+            try { data = await res.json(); } catch (_) { /* not JSON */ }
+          } finally { wt.done(); }
           if (res.status === 401) { stopAllTimers(); state.session = null; showLogin(); throw new Error("unauthenticated"); }
           if (res.status === 409 && data && typeof data.offset === "number") { off = data.offset; continue; }   // it is somewhere else: go there
           if (res.status === 404) { id = null; throw Object.assign(new Error("the upload was lost"), { status: 503 }); }   // another node or a restart: again from the start
@@ -298,13 +307,14 @@
   // a small file: the whole of it again when the connection drops
   async function apiUploadRetry(path, file, onWait, signal) {
     for (let tries = 1; ; tries++) {
-      try { return await apiUpload(path, file, signal); }
+      const wt = withTimeout(signal, UPLOAD_QUIET);
+      try { return await apiUpload(path, file, wt.signal); }
       catch (e) {
         if (signal && signal.aborted) throw e;   // cancelled: no second try
-        if (!(e instanceof TypeError) && !(e.status >= 500 && e.status !== 507 && e.status !== 501)) throw e;
+        if (!(e instanceof TypeError) && !(e instanceof DOMException) && !(e.status >= 500 && e.status !== 507 && e.status !== 501)) throw e;   // a DOMException is the request that went quiet
         if (tries >= 5) throw e;
         const wait = Math.min(1000 * 2 ** (tries - 1), 15000); onWait(wait, e); await sleep(wait);
-      }
+      } finally { wt.done(); }
     }
   }
 
@@ -4664,17 +4674,20 @@
       let done = 0, failed = null, next = 0, cancelled = false;
       const ctl = new AbortController();   // Cancel in the footer: what is going up stops, the rest is not started
       const jk = "upload:" + (++jobSeq);
-      const cancel = () => { cancelled = true; ctl.abort(); clearTimeout(timer); setJob(jk, "Cancelling…"); };
+      const cancel = () => { cancelled = true; ctl.abort(); clearTimeout(timer); clearInterval(ticker); setJob(jk, "Cancelling…"); };
       const live = new Map();   // the big files that are going up now: what they say of themselves
       // one file: "Uploading name: 1.2 GB of 3.3 GB (36%)" and the stop; several: how many are done, and under it what each of the big ones going up now says.
       // The line and its stop are made once and only their text changes, and not more than four times a second: a stop that is made again
       // after every one of thousands of small files is gone from under the pointer before the click is done, and the click does nothing.
       const txt = h("span", {}), more = h("div", {}), box = h("div", {}, h("span", {}, txt, " ", stopBtn(cancel)), more);
       let shown = false, last = 0, timer = null;
+      const started = new Map();   // the files that are going up and when each began
+      const ticker = setInterval(() => { if (!cancelled) paint(); }, 2000);   // a file that has gone quiet says how long it has been
       const paint = () => {
         timer = null; last = Date.now();
         if (cancelled) return;
         const lines = [...live.values()];
+        if (total > 1) for (const [it, t0] of started) if (!live.has(it) && Date.now() - t0 > 10000 && lines.length < 4) lines.push(it.path + ": waiting for the node, " + Math.round((Date.now() - t0) / 1000) + " s");   // the one that is holding it up
         txt.textContent = total === 1 && lines.length === 1 ? "Uploading " + lines[0] : "Uploading " + done.toLocaleString() + " of " + total.toLocaleString() + (failed ? "" : "…");
         more.replaceChildren(...(total === 1 ? [] : lines.map((l) => h("div", { class: "muted" }, l))));
         if (!shown) { shown = true; setJob(jk, box); }
@@ -4698,14 +4711,17 @@
       const worker = async () => {
         while (!failed && !cancelled && next < items.length) {
           const it = items[next++];
+          started.set(it, Date.now());
           try {
             if (it.dir) await api("POST", "/api/files/mkdir", { folder: fo, path: join(base, it.path) });
             else await one(it);
             done++; tell();
           } catch (e) { if (!cancelled) failed = { e, name: it.path }; }
+          started.delete(it);
         }
       };
       await Promise.all([worker(), worker(), worker()]);   // a few at a time: many small files are not left waiting for one big one
+      clearInterval(ticker); clearTimeout(timer);
       endJob(jk);
       if (cancelled) { clear(status).append(h("div", { class: "notice", role: "status" }, "Upload cancelled: " + done.toLocaleString() + " of " + total.toLocaleString() + " were uploaded; the rest was not.")); }
       else if (failed) { if (failed.e.message !== "unauthenticated") { clear(status).append(h("div", { class: "notice bad", role: "alert" }, failed.name + ": " + failed.e.message)); } }

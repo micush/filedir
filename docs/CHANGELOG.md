@@ -1,5 +1,8 @@
 # Changelog
 
+## [92]
+- An upload that sat at "79,654 of 79,655" for ever: one request had gone quiet and nothing in the page ever gave up on it. Every request of an upload (a small file, or a piece of a big one) is now stopped after two minutes without an answer and sent again (up to five times, then the upload stops and names the file). And the footer says which file is holding the upload up ("path: waiting for the node, 40 s") once one has taken more than ten seconds, redrawn every two seconds, so a stuck upload says what it is waiting for. Making a folder is not covered by the two minutes yet.
+
 ## [91]
 - Dropping a folder of many files on the window shows something at once. The browser hands a folder over entry by entry and each file only when asked, and the page asked for them one after the other, which took some twenty seconds for tens of thousands of files with nothing on the screen. They are asked for sixty at a time, and the footer reads "Reading the folder… N files" with a ✕ while it counts, then turns into the upload line.
 
