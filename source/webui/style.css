@@ -989,6 +989,10 @@ table.fstat.repl th:first-child, table.fstat.repl td:first-child { width: 12rem;
 .disk-key.k-trash { background: #c8a2ff; }
 .disk-key.k-other { background: #f5c565; }
 .disk-key.k-free { background: #62dba5; }
+.disk-key.k-rx { background: #4f86f7; }
+.disk-key.k-tx { background: #f09a2a; }
+.traffic-node { margin-top: 1rem; max-width: 36rem; }
+svg.traffic { width: 100%; height: auto; display: block; }
 .disk-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; border: 1px solid var(--border); vertical-align: -.1rem; }
 table.disk-legend { margin-top: .4rem; }
 table.disk-legend td { padding: .1rem .5rem .1rem 0; }

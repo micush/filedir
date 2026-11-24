@@ -54,11 +54,12 @@ type fdNodeStatus struct {
 	Name    string           `json:"name,omitempty"` // the host name of the node
 	Addr    string           `json:"addr,omitempty"`
 	Folders []fdFolderStatus `json:"folders"`
+	Traffic []fdTrafficPoint `json:"traffic,omitempty"` // what replication moved, a sample every 5 s for the last half hour (fd_traffic.go)
 }
 
 // Status describes this node's folders.
 func (s *fdService) Status() fdNodeStatus {
-	st := fdNodeStatus{Node: s.selfID(), Folders: []fdFolderStatus{}}
+	st := fdNodeStatus{Node: s.selfID(), Folders: []fdFolderStatus{}, Traffic: s.traffic.history()}
 	st.Name = byName(s.nodeNames(), st.Node)
 	if s.mg != nil && s.mg.cl != nil {
 		st.Addr = s.mg.cl.node.Self().Addr

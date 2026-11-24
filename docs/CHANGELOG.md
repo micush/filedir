@@ -1,5 +1,8 @@
 # Changelog
 
+## [76]
+- Files status: the Replication card has a bandwidth graph for each node: what it received from the others and what it sent to them, in bytes a second over the last half hour. Counted as the blocks go by, sampled every 5 s, kept in memory (a restart starts it again).
+
 ## [75] - 2026-11-24 — An upload says how far it is
 
 ### Fixed

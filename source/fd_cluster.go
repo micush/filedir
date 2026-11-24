@@ -75,8 +75,9 @@ type fdService struct {
 	folders map[string]*fdFolder
 	srcs    map[string]*fdSource // by peer node id
 
-	cfgFn  func() FilesConfig // a test's own configuration
-	served atomic.Int64       // blocks this node has sent to peers
+	cfgFn   func() FilesConfig // a test's own configuration
+	served  atomic.Int64       // blocks this node has sent to peers
+	traffic fdTraffic          // the bytes of that, and of what it has fetched, over time (fd_traffic.go)
 
 	vmu  sync.Mutex
 	view map[string]map[string]map[string]filesync.Vector // peer → folder → name → version last seen in its index
@@ -123,6 +124,7 @@ func (s *fdService) Start() {
 	go s.loop(ctx, fdScanEvery, s.scanAll)
 	go s.loop(ctx, fdSyncEvery, s.syncAll)
 	go s.loop(ctx, 6*time.Hour, s.maintain)
+	go s.loop(ctx, fdTrafficEvery, func() { s.traffic.sample(time.Now()) })
 }
 
 func (s *fdService) loop(ctx context.Context, every time.Duration, f func()) {
@@ -468,6 +470,7 @@ func (x *fdSource) Block(folder, name string, off int64, size int, h filesync.Ha
 			err = nil // a short block: the caller says it does not match
 		}
 		data = b[:n]
+		x.svc.traffic.rx.Add(int64(n))
 		var one [1]byte
 		if m, _ := rd.Read(one[:]); m > 0 && err == nil {
 			data = append(data, one[0]) // longer than asked: it does not match either
@@ -536,6 +539,7 @@ func (x *fdSource) Blocks(folder string, reqs []filesync.BlockReq) ([][]byte, er
 				return err
 			}
 			out[i] = b
+			x.svc.traffic.rx.Add(int64(n))
 		}
 		return nil
 	}, tmo)
@@ -624,6 +628,7 @@ func (c *Cluster) handleFilesBlocks(rw http.ResponseWriter, r *http.Request, cal
 			buf.Write(h[:])
 			buf.Write(data)
 			c.files.served.Add(1)
+			c.files.traffic.tx.Add(int64(len(data)))
 		} else {
 			buf.Write(h[:])
 		}
@@ -865,6 +870,7 @@ func (c *Cluster) handleFilesBlock(rw http.ResponseWriter, r *http.Request, call
 		return
 	}
 	c.files.served.Add(1)
+	c.files.traffic.tx.Add(int64(len(data)))
 	rw.Header().Set("Content-Type", "application/octet-stream")
 	fdThrottleWriter{rw, &fdLimRepl, r.Context()}.Write(data) // what this node sends the others, within its replication limit
 }

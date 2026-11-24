@@ -5269,6 +5269,36 @@
       dlg.addEventListener("close", () => dlg.remove());
       document.body.append(dlg); dlg.showModal(); go.focus();
     }
+    // What replication moved, per node: the bytes a second this node received from the others (blue) and sent to them (orange), over the
+    // half hour the node has kept (traffic in the status: a sample every 5 s).  Drawn like the pies: fixed colours, one chart for each node.
+    function trafficCharts(nodes) {
+      const NS = "http://www.w3.org/2000/svg", out = [];
+      const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
+      const rate = (v) => (v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + " MB/s" : v >= 1e3 ? Math.round(v / 1e3) + " KB/s" : Math.round(v) + " B/s");
+      for (const n of nodes) {
+        const pts = n.traffic || [];
+        if (pts.length < 2) continue;
+        const name = n.name || n.node;
+        const peak = Math.max(1000, ...pts.map((p) => Math.max(p.rx, p.tx)));
+        const step = 10 ** Math.floor(Math.log10(peak)), max = [1, 2, 5, 10].map((m) => m * step).find((m) => m >= peak);
+        const W = 560, H = 130, L = 64, R = 10, T = 8, B = 20, pw = W - L - R, ph = H - T - B;
+        const t0 = pts[0].t, t1 = pts[pts.length - 1].t, span = Math.max(1, t1 - t0);
+        const x = (t) => L + (pw * (t - t0)) / span, y = (v) => T + ph - (ph * Math.min(v, max)) / max;
+        const svg = sv("svg", { class: "traffic", viewBox: "0 0 " + W + " " + H, role: "img",
+          "aria-label": "Replication traffic of " + name + " over the last " + Math.max(1, Math.round(span / 60)) + " minutes: now receiving " + rate(pts[pts.length - 1].rx) + ", sending " + rate(pts[pts.length - 1].tx) });
+        for (let g = 0; g <= 2; g++) { const v = (max * g) / 2; svg.append(sv("line", { class: "qgrid", x1: L, x2: W - R, y1: y(v), y2: y(v) }), sv("text", { class: "qax", x: L - 6, y: y(v) + 4, "text-anchor": "end" }, rate(v))); }
+        svg.append(sv("text", { class: "qax", x: L, y: H - 5, "text-anchor": "start" }, Math.max(1, Math.round(span / 60)) + " min ago"), sv("text", { class: "qax", x: W - R, y: H - 5, "text-anchor": "end" }, "now"));
+        for (const [key, col, label] of [["rx", "#4f86f7", "Received"], ["tx", "#f09a2a", "Sent"]]) {
+          const d = pts.map((p, i) => (i ? "L" : "M") + x(p.t).toFixed(1) + "," + y(p[key]).toFixed(1)).join("");
+          svg.append(sv("path", { d: d + "L" + x(t1).toFixed(1) + "," + y(0) + "L" + x(t0).toFixed(1) + "," + y(0) + "Z", fill: col, "fill-opacity": "0.18", stroke: "none" }),
+            sv("path", { d, fill: "none", stroke: col, "stroke-width": "1.5", "stroke-linejoin": "round" }, sv("title", {}, label)));
+        }
+        const last = pts[pts.length - 1];
+        out.push(h("div", { class: "traffic-node" }, h("div", { class: "disk-title" }, name),
+          h("div", { class: "muted" }, h("span", { class: "disk-key k-rx" }), " Received " + rate(last.rx) + "  ", h("span", { class: "disk-key k-tx" }), " Sent " + rate(last.tx)), svg));
+      }
+      return out;
+    }
     function diskPies(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
       const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
@@ -5327,7 +5357,7 @@
           h("tbody", {}, rows))));
       }
       for (const e of r.node_errors || []) box.append(h("div", { class: "notice bad" }, "Node " + e.node + " did not answer: " + e.error));
-      if (nodes.length > 1 && nodes.some((n) => n.folders.length)) { rep.replaceChildren(...replication(nodes)); repCard.hidden = false; } else { rep.replaceChildren(); repCard.hidden = true; }
+      if (nodes.length > 1 && nodes.some((n) => n.folders.length)) { rep.replaceChildren(...replication(nodes), ...trafficCharts(nodes)); repCard.hidden = false; } else { rep.replaceChildren(); repCard.hidden = true; }
     }
     async function load() {
       const my = ++seq;
