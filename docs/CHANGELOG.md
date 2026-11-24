@@ -1,5 +1,11 @@
 # Changelog
 
+## [63] - 2026-11-24 — Look at another node's copy of the folders
+
+### Added
+- **The Node menu picks whose copy of the folders the Files page shows.** Before, the page always showed the copy of the node you were signed in to. Picking another node now lists, searches and reads (the list, the tree, the footer numbers, text files, sizes) the folders as that node has them, which shows a node that is behind. That copy is **read only**: Upload, New, Rename, Delete, Paste and the like are not offered, and the footer says whose copy it is; pick the node you are signed in to (or "this node") to change files. Downloads still come from the node you are signed in to.
+- Only reading calls and the trash can be relayed to another node (`/api/files/list`, `search`, `size`, `text`, `status`, `trash`); everything that changes something still acts on the node signed in to.
+
 ## [62] - 2026-11-24 — The trash of the node picked in the Node menu
 
 ### Fixed

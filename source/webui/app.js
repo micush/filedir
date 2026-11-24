@@ -186,7 +186,7 @@
   // Everything follows the node picked in the top bar (relayed through the node
   // you are logged in to) except the login itself.  The picker's own list of
   // nodes is asked of the login node explicitly (api(..., true)).
-  const TRASH_API = /^\/api\/files\/trash(\/|\?|$)/;   // the exception: a trash is each node's own, so the Node menu picks whose
+  const TRASH_API = /^\/api\/files\/(trash(\/|\?|$)|list\?|search\?|size\?|text\?|status\?local=1)/;   // the exceptions: a trash is each node's own, and the Files page looks at the picked node's copy of the folders (the rest of its API acts on the node signed in to)
   const LOCAL_API = /^\/api\/(login|logout|session|proxy|tshoot\/download|files)(\/|\?|$)/;   // the files are the same on every node, and a transfer is made with the node signed in to: the Files page ignores the Node menu
   // The Node menu's "Cluster" entry: Monitor ▸ Node shows every node's numbers added together (the node you are logged in to
   // asks the others), and Monitor ▸ Capture captures on every node.  Only those pages offer it, and only their requests change;
@@ -4418,7 +4418,9 @@
     const opened = new Set();       // the tree nodes that are open, by tkey
     const autoOpened = new Set();   // the tree nodes opened for the person once, not again
     const kids = new Map();         // tree node → its folders: { name, mount } (a mount is a synced folder shown inside the root folder)
-    const ro = () => !!(state.session && state.session.read_only);
+    const sro = () => !!(state.session && state.session.read_only);   // a read-only account
+    const viewing = () => !!state.target && state.target !== CLUSTER && !isGw();   // the Node menu picked another node: its copy is looked at, not changed
+    const ro = () => sro() || viewing();
     const canEdit = () => !ro() && !searching() && !trash.on;   // a list of matches is for finding: change things where they are
     const join = (a, b) => (a ? a + "/" : "") + b;
     const parent = (p) => p.split("/").slice(0, -1).join("/");
@@ -4812,7 +4814,7 @@
       ["Restore", () => restoreTrash(list)], ["Delete…", () => deleteTrash(list), "danger"], "-",
       ["Empty trash…", () => emptyTrash(trash.folder)],
     ]);
-    const trashItem = (fo) => (SITE !== "files" && !ro() && fo ? [["Empty trash…", () => emptyTrash(fo)]] : []);
+    const trashItem = (fo) => (SITE !== "files" && !sro() && fo ? [["Empty trash…", () => emptyTrash(fo)]] : []);
     const hereItems = (base, fo, where) => (ro() ? [] : [
       ["Upload" + where, [["Files…", () => pickFiles(base, fo)], ["Folder…", () => pickFolder(base, fo)], ["From URL…", () => fetchUrl(base, fo)]]],
       ["New" + where, [["Folder…", () => newFolder(base, fo)], ["File…", () => newFile(base, fo)]]],
@@ -4944,7 +4946,7 @@
       const f = folders.find((x) => x.id === kept.folder), n = sel.size;
       const bytes = selected().reduce((a, e) => a + (e.kind === "file" ? e.size : 0), 0);
       foot.title = f ? (f.peers || []).filter((x) => x.error).map((x) => (x.name || x.node) + ": " + x.error).join("\n") : "";
-      clear(foot).append(...[...jobs.values()].map((n) => h("div", { class: "fm-job" }, n)), progress ? progress : jobs.size ? "" : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on " + whose() + ": " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
+      clear(foot).append(viewing() ? h("div", { class: "hint" }, "Showing " + whose() + "'s copy of the folders. It is looked at here, not changed: pick this node in the Node menu to change files.") : null, ...[...jobs.values()].map((n) => h("div", { class: "fm-job" }, n)), progress ? progress : jobs.size ? "" : trash.on ? "Trash of " + (trash.folder === ROOT ? "the root folder" : trash.folder) + " on " + whose() + ": " + (n ? n + " selected" : plural(realRows(entries).length, "item", "items") + (trash.when ? "" : ", newest first")) : searching() && !n ? (truncated ? "More than " + entries.length.toLocaleString() + " matches; the first are shown" : plural(entries.length, "match", "matches")) + " in " + scopeName() : n ? n.toLocaleString() + " selected" + (bytes ? " (" + size(bytes) + ")" : "")
         : f ? f.files.toLocaleString() + " files, " + f.dirs.toLocaleString() + " folders, " + size(f.bytes) + " in this folder" +
           (f.conflicts ? "; " + f.conflicts + " conflict cop" + (f.conflicts === 1 ? "y" : "ies") : "") + (f.scanned ? "; scanned " + stamp(f.scanned) : "") + (f.error ? ". Problem: " + f.error : "") + ((f.peers || []).filter((x) => x.error).map((x) => ". Not syncing with " + (x.name || x.node) + ": " + whyShort(x.error)).join("")) : "");
     }
@@ -5025,7 +5027,7 @@
       const had = tree.contains(document.activeElement);
       const rows = [];
       for (const f of hasRoot() ? folders.filter((x) => x.id === ROOT) : folders) treeNode(f.id, "", f.id, 0, rows);   // with a root, the others hang under it
-      if (SITE !== "files" && !ro() && folders.length) {   // at the very end: the trash of the open folder
+      if (SITE !== "files" && !sro() && folders.length) {   // at the very end: the trash of the open folder
         const fo = trash.on ? trash.folder : kept.folder;
         rows.push(h("div", { class: "tn trashn" + (trash.on ? " cur" : ""), role: "treeitem", "aria-level": "1", "aria-selected": trash.on ? "true" : "false", tabindex: trash.on ? "0" : "-1", title: "The trash of " + (fo === ROOT ? "the root folder" : fo) + " on " + whose(),
           onclick: () => goTrash(fo), oncontextmenu: (ev) => rowMenu([["Open", () => goTrash(fo)], ["Empty trash…", () => emptyTrash(fo)]])(ev),
