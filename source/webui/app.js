@@ -5248,7 +5248,8 @@
     }
     function draw(r) {
       clear(box);
-      const nodes = r.nodes || [];
+      const nodeName = (x) => x.name || x.node;   // every card lists the nodes by name
+      const nodes = (r.nodes || []).slice().sort((x, y) => nodeName(x).localeCompare(nodeName(y), undefined, { numeric: true, sensitivity: "base" }));
       const pies = diskPies(nodes); diskCard.hidden = !pies.length; disk.replaceChildren(...pies);
       if (!nodes.some((n) => n.folders.length)) { box.append(h("div", { class: "empty" }, "No folders are set up. Add one under Configure ▸ Folders.")); }
       else {

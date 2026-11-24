@@ -1,5 +1,10 @@
 # Changelog
 
+## [67] - 2026-11-24 — Nodes in alphabetical order
+
+### Changed
+- On the Files status page the nodes are in alphabetical order of their names in every card (Files, Disk space, Replication: its rows, its columns and the files on their way), instead of the order the cluster answered in.
+
 ## [66] - 2026-11-24 — The footer no longer starts with "null"
 
 ### Fixed
