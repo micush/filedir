@@ -48,6 +48,10 @@ type fdFolder struct {
 	scanErr string
 	peers   map[string]*fdPeerState
 
+	trashMu    sync.Mutex // what the trash holds, counted now and then (a walk of a big trash takes a while), see trashBytes
+	trashB     int64
+	trashAt    time.Time
+	trashBusy  bool
 	rescanning atomic.Bool
 	svc        *fdService
 	told       bool            // a notice to the other nodes is going out or waiting (tellPeers)
@@ -888,6 +892,31 @@ func (s *fdService) emptyTrashOn(mount string) {
 			warnf("files: %s: emptying the trash on %s (disk nearly full) failed: %v", f.cfg.ID, mount, err)
 			continue
 		}
+		f.trashStale()
 		warnf("files: %s: the disk %s is nearly full: emptied the trash (%d files, %d bytes)", f.cfg.ID, mount, n, b)
 	}
+}
+
+// trashBytes is what the folder's trash holds on this node.  The trash is counted by walking it, so the status page gets the last count
+// (at most a minute old) and a fresh one is made in the background when that is older; the first call has nothing yet.
+func (f *fdFolder) trashBytes() int64 {
+	f.trashMu.Lock()
+	defer f.trashMu.Unlock()
+	if !f.trashBusy && f.f != nil && time.Since(f.trashAt) > time.Minute {
+		f.trashBusy = true
+		go func(fl *filesync.Folder) {
+			b, _ := fl.TrashSize()
+			f.trashMu.Lock()
+			f.trashB, f.trashAt, f.trashBusy = b, time.Now(), false
+			f.trashMu.Unlock()
+		}(f.f)
+	}
+	return f.trashB
+}
+
+// trashStale makes the next status count the trash again: it was emptied, restored from, or something was deleted for good.
+func (f *fdFolder) trashStale() {
+	f.trashMu.Lock()
+	f.trashAt = time.Time{}
+	f.trashMu.Unlock()
 }

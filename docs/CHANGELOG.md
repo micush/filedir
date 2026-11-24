@@ -1,5 +1,11 @@
 # Changelog
 
+## [74] - 2026-11-24 — Trash in the Disk space pies, with a red x to empty it
+
+### Added
+- **The Disk space pies have a Trash slice**: what the trash of the synced folders holds on that node, apart from the synced files and the rest of the disk (the trash was in "Other files" before). The nodes report it as `trash_bytes` for each folder; it is counted by walking the trash, so the count is at most a minute old (and counted again at once after the trash is emptied, restored from or deleted from), and the slice shows up a few seconds after the page is opened.
+- **A red ✕ at the Trash of a pie empties the trash of the folders on that disk of that node.** It asks first (how much it holds, that it cannot be got back, that the other nodes keep their own), and does it through that node when it is not the one signed in to. Not shown to a read-only account.
+
 ## [73] - 2026-11-24 — The Delete key
 
 ### Fixed

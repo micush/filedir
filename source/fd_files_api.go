@@ -655,6 +655,7 @@ func (w *WebServer) handleFilesTrashEmpty(rw http.ResponseWriter, r *http.Reques
 		fdFail(rw, err)
 		return
 	}
+	f.trashStale()
 	fdAudit(s, "files: %s: emptied the trash (%d files, %d bytes)", f.cfg.ID, n, b)
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"bytes": b, "files": n}})
 }
@@ -692,6 +693,7 @@ func (w *WebServer) handleFilesTrashRestore(rw http.ResponseWriter, r *http.Requ
 		fdFail(rw, err)
 		return
 	}
+	f.trashStale()
 	f.rescan()
 	fdAudit(s, "files: %s: restored %s from the trash (%d files)", f.cfg.ID, in.Name, n)
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"files": n}})
@@ -713,6 +715,7 @@ func (w *WebServer) handleFilesTrashDelete(rw http.ResponseWriter, r *http.Reque
 		fdFail(rw, err)
 		return
 	}
+	f.trashStale()
 	fdAudit(s, "files: %s: deleted %s from the trash for good (%d files, %d bytes)", f.cfg.ID, in.Name, n, b)
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"bytes": b, "files": n}})
 }

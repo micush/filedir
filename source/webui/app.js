@@ -5243,6 +5243,25 @@
     }
     // used and free space of the disks that hold the folders: one pie for each disk of each node (what the folders on it hold, what else is
     // on it, what is free)
+    // a red x at the Trash of a pie: it asks, and empties the trash of the folders on that disk of that node (through that node)
+    function emptyTrashOf(n, d) {
+      const meta = state.nodes.find((x) => x.node_id === n.node), self = !meta || meta.self, who = n.name || n.node;
+      const call = (method, path, body) => (self ? api(method, path, body, true) : api(method, "/api/proxy?node=" + encodeURIComponent(meta.addr) + "&path=" + encodeURIComponent(path), body, true));
+      const dlg = h("dialog", { class: "cv-dialog", "aria-label": "Empty the trash on " + who });
+      const err = h("div", { class: "notice bad hidden", role: "alert" });
+      const go = h("button", { type: "button", class: "btn danger", onclick: async () => {
+        go.disabled = true; go.textContent = "Working…"; err.classList.add("hidden");
+        try {
+          for (const id of d.ids) await call("POST", "/api/files/trash/empty", { folder: id });
+          dlg.close(); load();
+        } catch (e) { go.disabled = false; go.textContent = "Empty trash"; err.textContent = e.message; err.classList.remove("hidden"); }
+      } }, "Empty trash");
+      dlg.append(h("h2", {}, "Empty the trash on " + who + "?"),
+        h("p", { class: "pre-line" }, "The trash of " + (d.ids.length === 1 ? "the folder " : "the folders ") + d.ids.map((id) => (id === "/" ? "/ (root)" : id)).join(", ") + " on " + who + " holds " + size(d.trash) + ". It is deleted for good and cannot be got back. The other nodes keep their own trash."),
+        err, h("div", { class: "toolbar" }, h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Cancel"), go));
+      dlg.addEventListener("close", () => dlg.remove());
+      document.body.append(dlg); dlg.showModal(); go.focus();
+    }
     function diskPies(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
       const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
@@ -5251,13 +5270,13 @@
         const disks = new Map();
         for (const f of n.folders) {
           if (!f.disk_id) continue;
-          const d = disks.get(f.disk_id) || { used: f.disk_used || 0, free: f.disk_free || 0, mine: 0, ids: [] };
-          d.mine += f.bytes || 0; d.ids.push(f.id); disks.set(f.disk_id, d);
+          const d = disks.get(f.disk_id) || { used: f.disk_used || 0, free: f.disk_free || 0, mine: 0, trash: 0, ids: [] };
+          d.mine += f.bytes || 0; d.trash += f.trash_bytes || 0; d.ids.push(f.id); disks.set(f.disk_id, d);
         }
         for (const d of disks.values()) {
           const total = d.used + d.free; if (!total) continue;
-          const mine = Math.min(d.mine, d.used), other = d.used - mine;
-          const parts = [["Synced folders", mine, "#7fa8ff", "k-mine"], ["Other files", other, "#f5c565", "k-other"], ["Free", d.free, "#62dba5", "k-free"]];
+          const mine = Math.min(d.mine, d.used), trash = Math.min(d.trash, d.used - mine), other = d.used - mine - trash;   // the trash is in the folders' directories, and not in the index
+          const parts = [["Synced folders", mine, "#7fa8ff", "k-mine"], ["Trash", trash, "#c8a2ff", "k-trash"], ["Other files", other, "#f5c565", "k-other"], ["Free", d.free, "#62dba5", "k-free"]];
           const R = 60, C = 64;
           let a0 = -Math.PI / 2;
           const slices = parts.filter((x) => x[1] > 0).map(([name, v, col]) => {
@@ -5271,7 +5290,8 @@
           const pct = (v) => (v * 100 / total).toFixed(v * 100 / total < 10 ? 1 : 0) + "%";
           const svg = sv("svg", { viewBox: "0 0 128 128", width: "128", height: "128", role: "img", "aria-label": "Disk of " + (n.name || n.node) + ": " + size(d.used) + " used of " + size(total) + ", " + size(d.free) + " free" }, ...slices);
           const legend = h("table", { class: "fstat disk-legend" }, h("tbody", {}, parts.map(([name, v, col, cls]) => h("tr", {},
-            h("td", {}, h("span", { class: "disk-key " + cls }), " " + name), h("td", { class: "num" }, size(v)), h("td", { class: "num" }, pct(v))))));
+            h("td", {}, h("span", { class: "disk-key " + cls }), " " + name), h("td", { class: "num" }, size(v)), h("td", { class: "num" }, pct(v)),
+            cls === "k-trash" && v > 0 && !(state.session && state.session.read_only) ? h("td", {}, h("button", { type: "button", class: "stop", title: "Empty the trash on " + (n.name || n.node), "aria-label": "Empty the trash on " + (n.name || n.node), onclick: () => emptyTrashOf(n, d) }, "✕")) : null))));
           out.push(h("div", { class: "disk" }, svg, h("div", {}, h("div", { class: "disk-title" }, (n.name || n.node) + (d.ids.length ? ": " + d.ids.join(", ") : "")),
             h("div", { class: "muted" }, size(d.used) + " used of " + size(total)), legend)));
         }

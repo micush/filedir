@@ -30,22 +30,23 @@ type fdPeerView struct {
 }
 
 type fdFolderStatus struct {
-	ID       string              `json:"id"`
-	Path     string              `json:"path"`
-	Paused   bool                `json:"paused,omitempty"`
-	Files    int                 `json:"files"`
-	Dirs     int                 `json:"dirs"`
-	Links    int                 `json:"links"`
-	Bytes    int64               `json:"bytes"`
-	Deleted  int                 `json:"deleted"` // tombstones
-	Conflict int                 `json:"conflicts"`
-	Scanned  int64               `json:"scanned,omitempty"`
-	DiskUsed uint64              `json:"disk_used,omitempty"` // the disk that holds the folder: used, and what may still be used
-	DiskFree uint64              `json:"disk_free,omitempty"`
-	DiskID   string              `json:"disk_id,omitempty"`
-	Error    string              `json:"error,omitempty"`
-	Peers    []fdPeerView        `json:"peers,omitempty"`
-	Active   []filesync.Transfer `json:"active,omitempty"` // large files being pulled now
+	ID         string              `json:"id"`
+	Path       string              `json:"path"`
+	Paused     bool                `json:"paused,omitempty"`
+	Files      int                 `json:"files"`
+	Dirs       int                 `json:"dirs"`
+	Links      int                 `json:"links"`
+	Bytes      int64               `json:"bytes"`
+	Deleted    int                 `json:"deleted"` // tombstones
+	Conflict   int                 `json:"conflicts"`
+	Scanned    int64               `json:"scanned,omitempty"`
+	TrashBytes int64               `json:"trash_bytes,omitempty"` // what its trash holds on this node (counted at most once a minute)
+	DiskUsed   uint64              `json:"disk_used,omitempty"`   // the disk that holds the folder: used, and what may still be used
+	DiskFree   uint64              `json:"disk_free,omitempty"`
+	DiskID     string              `json:"disk_id,omitempty"`
+	Error      string              `json:"error,omitempty"`
+	Peers      []fdPeerView        `json:"peers,omitempty"`
+	Active     []filesync.Transfer `json:"active,omitempty"` // large files being pulled now
 }
 
 type fdNodeStatus struct {
@@ -81,6 +82,7 @@ func (s *fdService) Status() fdNodeStatus {
 		if u, av, id, err := filesync.DiskSpace(f.cfg.Path); err == nil {
 			fs.DiskUsed, fs.DiskFree, fs.DiskID = u, av, id
 		}
+		fs.TrashBytes = f.trashBytes()
 		if f.f != nil {
 			fs.Active = f.f.Transfers()
 			for _, e := range f.f.Entries() {

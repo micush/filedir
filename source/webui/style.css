@@ -986,6 +986,7 @@ table.fstat.repl th:first-child, table.fstat.repl td:first-child { width: 12rem;
 .disk svg { flex: none; }
 .disk-title { font-weight: 600; margin-bottom: .1rem; }
 .disk-key.k-mine { background: #7fa8ff; }
+.disk-key.k-trash { background: #c8a2ff; }
 .disk-key.k-other { background: #f5c565; }
 .disk-key.k-free { background: #62dba5; }
 .disk-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; border: 1px solid var(--border); vertical-align: -.1rem; }
