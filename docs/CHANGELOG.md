@@ -1,5 +1,13 @@
 # Changelog
 
+## [66] - 2026-11-24 — The footer no longer starts with "null"
+
+### Fixed
+- The line at the bottom of the Files page began with the word "null" (since [63]): the note "Showing another node's copy" is nothing when you look at your own node, and nothing was written out as that word.
+
+### Changed
+- The note itself ("Showing filedir2's copy of the folders …") is gone. Another node's copy is still read only.
+
 ## [65] - 2026-11-24 — Disk space: spread out, by node name
 
 ### Changed
