@@ -991,6 +991,8 @@ table.fstat.repl th:first-child, table.fstat.repl td:first-child { width: 12rem;
 .disk-key.k-free { background: #62dba5; }
 .disk-key.k-rx { background: #4f86f7; }
 .disk-key.k-tx { background: #f09a2a; }
+.speedtest { margin-top: 1rem; }
+.speedline { margin-top: .25rem; }
 .traffic-row { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-top: 1rem; }
 .traffic-node { flex: 1 1 22rem; min-width: 0; }
 svg.traffic { width: 100%; height: auto; display: block; }

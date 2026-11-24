@@ -5313,6 +5313,29 @@
       }
       return out;
     }
+    // Speed test: this node, as the receiver, against each other node with nothing else in the way, and how fast it hashes and writes.
+    let speed, speedRes = null, speedBusy = false;
+    function drawSpeed() {
+      const nameOf = (id) => { const n = shownNodes.find((x) => x.node === id); return n ? n.name || n.node : id; };
+      const mbps = (v) => Math.round(v).toLocaleString() + " Mbps";
+      const mbs = (v) => Math.round(v).toLocaleString() + " MB/s";
+      const lines = [];
+      if (speedRes && speedRes.error) lines.push(speedRes.error);
+      else if (speedRes) {
+        for (const p of speedRes.peers || []) lines.push("From " + nameOf(p.node) + ": " + (p.error ? p.error : mbps(p.mbit)));
+        lines.push("Hashing on this node, one core: BLAKE3 " + mbs(speedRes.hash.blake3_mbs) + ", SHA-256 " + mbs(speedRes.hash.sha256_mbs));
+        lines.push(speedRes.disk.error ? "Disk of this node: " + speedRes.disk.error : "Disk write on this node (" + speedRes.disk.folder + "): " + mbs(speedRes.disk.write_mbs));
+      }
+      speed.replaceChildren(
+        h("button", { type: "button", class: "btn", disabled: speedBusy || (state.session && state.session.read_only) ? "" : null,
+          title: "Measures this node as the receiver: data from each other node over the file channel with no disk and no hashing in the way, then how fast this node hashes and writes. Sign in to another node to test it as the receiver. It moves a few hundred megabytes from each node.",
+          onclick: async () => {
+            speedBusy = true; drawSpeed();
+            try { speedRes = (await api("POST", "/api/files/speedtest", { mb: 512 }, true)).data; } catch (e) { speedRes = { error: e.message }; }
+            speedBusy = false; drawSpeed();
+          } }, speedBusy ? "Testing…" : "Test speed"),
+        ...lines.map((t) => h("div", { class: "muted speedline" }, t)));
+    }
     function diskPies(nodes) {
       const NS = "http://www.w3.org/2000/svg", out = [];
       const sv = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const x of kids) if (x) el.append(x); return el; };
@@ -5379,7 +5402,7 @@
       try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); const sx = [...box.querySelectorAll(".scroll")].map((el) => el.scrollLeft); draw(r); box.querySelectorAll(".scroll").forEach((el, i) => { el.scrollLeft = sx[i] || 0; }); } } catch (e) { fail(status)(e); }   // the page is redrawn every few seconds: a table that was scrolled stays where it was
     }
     return {
-      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); repCard = section("Replication", rep); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard); load(); },
+      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep, speed); drawSpeed(); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard); load(); },
       async poll() { await load(); },
       poll_ms: 5000,
     };

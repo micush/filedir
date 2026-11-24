@@ -141,3 +141,27 @@ func hashOf(b []byte) (int, filesync.Hash, error) {
 	}
 	return len(b), hs[0].Hash, nil
 }
+
+// The speed test measures a node against another over the real channel, and the hash and disk of this one.
+func TestSpeedTestMeasuresThePeerTheHashAndTheDisk(t *testing.T) {
+	fdNoTell.Store(true)
+	t.Cleanup(func() { fdNoTell.Store(false) })
+	a, b := newFdTestNode(t, "A"), newFdTestNode(t, "B")
+	b.join(a.tnode)
+	a.sync()
+	b.sync()
+	res := b.svc.speedTest(t.Context(), 64)
+	if len(res.Peers) != 1 || res.Peers[0].Error != "" || res.Peers[0].Mbit <= 0 {
+		t.Fatalf("peers: %+v", res.Peers)
+	}
+	if res.Hash.Blake3 <= 0 || res.Hash.SHA256 <= 0 {
+		t.Fatalf("hash: %+v", res.Hash)
+	}
+	if res.Disk.Error != "" || res.Disk.Write <= 0 {
+		t.Fatalf("disk: %+v", res.Disk)
+	}
+	t.Logf("64 MB from the peer at %.0f Mbit/s; BLAKE3 %.0f MB/s, SHA-256 %.0f MB/s; disk %.0f MB/s", res.Peers[0].Mbit, res.Hash.Blake3, res.Hash.SHA256, res.Disk.Write)
+	if left, _ := filepath.Glob(filepath.Join(b.root, ".filedir", "tmp", "speedtest-*")); len(left) != 0 {
+		t.Fatalf("the test left files behind: %v", left)
+	}
+}

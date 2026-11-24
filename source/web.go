@@ -407,6 +407,7 @@ func (w *WebServer) Handler() http.Handler {
 	mux.HandleFunc("POST /api/files/fetch/cancel", w.authed(w.handleFilesFetchCancel))
 	mux.HandleFunc("GET /api/files/trash", w.authed(w.handleFilesTrash))
 	mux.HandleFunc("POST /api/files/trash/empty", w.authed(w.handleFilesTrashEmpty))
+	mux.HandleFunc("POST /api/files/speedtest", w.authed(w.handleFilesSpeedTest))
 	mux.HandleFunc("GET /api/files/trash/list", w.authed(w.handleFilesTrashList))
 	mux.HandleFunc("POST /api/files/trash/restore", w.authed(w.handleFilesTrashRestore))
 	mux.HandleFunc("POST /api/files/trash/delete", w.authed(w.handleFilesTrashDelete))

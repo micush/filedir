@@ -769,6 +769,7 @@ func (c *Cluster) registerFileRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /cluster/files/index", c.peerAuth(c.handleFilesIndex))
 	mux.HandleFunc("POST /cluster/files/block", c.peerAuth(c.handleFilesBlock))
 	mux.HandleFunc("POST /cluster/files/blocks", c.peerAuth(c.handleFilesBlocks))
+	mux.HandleFunc("POST /cluster/files/speed", c.peerAuth(c.handleFilesSpeed))
 	mux.HandleFunc("POST /cluster/files/have", c.peerAuth(c.handleFilesHave))
 	mux.HandleFunc("POST /cluster/files/status", c.peerAuth(c.handleFilesStatus))
 	mux.HandleFunc("POST /cluster/files/notify", c.peerAuth(c.handleFilesNotify))
