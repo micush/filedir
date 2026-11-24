@@ -1,5 +1,8 @@
 # Changelog
 
+## [91]
+- Dropping a folder of many files on the window shows something at once. The browser hands a folder over entry by entry and each file only when asked, and the page asked for them one after the other, which took some twenty seconds for tens of thousands of files with nothing on the screen. They are asked for sixty at a time, and the footer reads "Reading the folder… N files" with a ✕ while it counts, then turns into the upload line.
+
 ## [90]
 - The red ✕ of an upload, a fetch from a web address, and a copy or move cancels when the pointer goes down, not when the button comes up, and only once (the keyboard still works through the click). A line redrawn while a transfer runs could take the click away, and the count went on. Reported on an upload of 78,346 files: pressing ✕ did nothing.
 

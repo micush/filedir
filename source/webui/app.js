@@ -4727,19 +4727,34 @@
       const more = () => reader.readEntries((b) => { if (!b.length) ok(all); else { all.push(...b); more(); } }, no);
       more();
     });
-    async function walkEntry(en, prefix, out) {
-      if (en.isFile) { out.push({ path: prefix + en.name, file: await new Promise((ok, no) => en.file(ok, no)) }); return; }
+    // The browser hands over a folder one entry at a time, and a file only when it is asked for: with tens of thousands of files, asking one
+    // after the other took many seconds with nothing on the screen.  They are asked for sixty at a time, and the footer counts them as they
+    // are found (with a stop), so there is something to see at once.
+    async function walkEntry(en, prefix, out, st) {
+      if (st.stopped) return;
+      if (en.isFile) { out.push({ path: prefix + en.name, file: await new Promise((ok, no) => en.file(ok, no)) }); st.found++; st.tell(); return; }
       if (!en.isDirectory) return;
       const list = await readAll(en.createReader());
-      if (!list.length) out.push({ path: prefix + en.name, dir: true });
-      for (const c of list) await walkEntry(c, prefix + en.name + "/", out);
+      if (!list.length) { out.push({ path: prefix + en.name, dir: true }); return; }
+      const files = list.filter((c) => c.isFile), dirs = list.filter((c) => !c.isFile);
+      for (let i = 0; i < files.length && !st.stopped; i += 60) {
+        const got = await Promise.all(files.slice(i, i + 60).map((c) => new Promise((ok, no) => c.file(ok, no))));
+        files.slice(i, i + 60).forEach((c, k) => out.push({ path: prefix + en.name + "/" + c.name, file: got[k] }));
+        st.found += got.length; st.tell();
+      }
+      for (const c of dirs) await walkEntry(c, prefix + en.name + "/", out, st);
     }
     async function dropped(grab, base, fo) {
-      const out = [];
+      const out = [], jk = "read:" + (++jobSeq), txt = h("span", {}), st = { stopped: false, found: 0, last: 0, tell: null };
+      st.tell = () => { const now = Date.now(); if (now - st.last >= 200) { st.last = now; txt.textContent = "Reading the folder… " + st.found.toLocaleString() + " files"; } };
+      setJob(jk, h("div", {}, h("span", {}, txt, " ", stopBtn(() => { st.stopped = true; setJob(jk, "Cancelling…"); }))));
+      txt.textContent = "Reading the folder…";
       try {
-        if (grab.ents.length) for (const en of grab.ents) await walkEntry(en, "", out);
+        if (grab.ents.length) for (const en of grab.ents) await walkEntry(en, "", out, st);
         else for (const f of grab.files) out.push({ path: f.name, file: f });
-      } catch (e) { fail(status)(e); return; }
+      } catch (e) { endJob(jk); fail(status)(e); return; }
+      endJob(jk);
+      if (st.stopped) return;
       await upload(out, base, fo);
     }
 
