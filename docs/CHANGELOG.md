@@ -1,5 +1,9 @@
 # Changelog
 
+## [105]
+
+- Files: the Delete confirmation says "The file is moved to the trash and can be restored if needed."
+
 ## [104]
 
 - Files: the Shift+Delete confirmation is titled "Permanently delete NAME?" and its button says Delete.

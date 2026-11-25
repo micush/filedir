@@ -4582,7 +4582,7 @@
     const renameDialog = (e) => ask("Rename", "", { input: e.name, label: "New name", ok: "Rename" }, (v) => (!v || v.includes("/") ? "Give it a name without a slash." : act(() => api("POST", "/api/files/rename", { folder: kept.folder, from: e.path, to: join(parent(e.path), v) }))));
     // perm (Shift+Delete): no copy is kept in the trash, here or on the other nodes.
     const removeMany = (list, fo = kept.folder, perm = false) => !(list = list.filter((e) => !e.mount)).length ? null : ask(perm ? (list.length === 1 ? "Permanently delete " + list[0].name + "?" : "Permanently delete " + list.length + " items?") : (list.length === 1 ? "Delete " + list[0].name + "?" : "Delete " + list.length + " items?"),
-      (list.length === 1 ? (list[0].kind === "dir" ? "The folder and everything in it is" : "The file is") : "These " + list.length + " items, and everything in the folders among them, are") + (perm ? " deleted everywhere and cannot be restored." : " deleted here and on every node. A copy stays in each node's trash for 30 days."),
+      (list.length === 1 ? (list[0].kind === "dir" ? "The folder and everything in it is" : "The file is") : "These " + list.length + " items, and everything in the folders among them, are") + (perm ? " deleted everywhere and cannot be restored." : " moved to the trash and can be restored if needed."),
       { ok: "Delete", danger: true }, () => act(async () => {
         for (const e of list) await api("POST", "/api/files/delete", { folder: e.folder || fo, path: e.path, ...(perm ? { permanent: true } : {}) });   // a match in the filter says which folder it is in
         sel.clear();
