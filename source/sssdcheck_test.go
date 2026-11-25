@@ -125,3 +125,16 @@ func TestFixSSSDIDRangeInAContainer(t *testing.T) {
 		t.Fatalf("no id mapping: %q %v %v", msg, err, resets)
 	}
 }
+
+func TestValidPAMServiceName(t *testing.T) {
+	for _, bad := range []string{"", ".", "..", ".x", "a/b", "../etc/x", "a b", "a\x00b"} {
+		if validPAMServiceName(bad) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, good := range []string{"filedir", "file-dir_2", "login.d"} {
+		if !validPAMServiceName(good) {
+			t.Errorf("%q refused", good)
+		}
+	}
+}

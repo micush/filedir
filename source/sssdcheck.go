@@ -225,6 +225,20 @@ func addIDRange(conf string, secs []string) string {
 	return strings.Join(out, "\n")
 }
 
+// validPAMServiceName accepts the names /etc/pam.d files have: letters, digits, '.', '_' and '-', not starting with '.'.
+// The name becomes part of file names beside sssd.conf, so it must not carry a path.
+func validPAMServiceName(s string) bool {
+	if s == "" || len(s) > 64 || s[0] == '.' {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
 // fixSSSD makes the changes to sssd.conf that sign-ins of Active Directory users need, keeps the old file beside it
 // (sssd.conf.<service>.bak, once) and restarts sssd:
 //   - maps the PAM service when group policy would refuse it (sssdGPOProblem);
@@ -234,6 +248,9 @@ func addIDRange(conf string, secs []string) string {
 // It reports what it did; "" and nil when there was nothing to do.  A domain defined only in a conf.d snippet is not
 // edited, and what to add is returned as an error.
 func fixSSSD(service string) (string, error) {
+	if !validPAMServiceName(service) {
+		return "", fmt.Errorf("the PAM service name %q is not valid", service)
+	}
 	var notes []string // things not done, for the error
 	b, rerr := os.ReadFile(sssdConfFile)
 	inFile := func(sec string) bool { return rerr == nil && strings.Contains(string(b), "["+sec+"]") }

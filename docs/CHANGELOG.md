@@ -1,5 +1,24 @@
 # Changelog
 
+## [114] - 2026-11-24 — CodeQL "Uncontrolled data used in path expression", second batch
+
+### Fixed
+
+- `fixSSSD` refuses a PAM service name that is empty, over 64 bytes, starts with a dot, or has anything but letters, digits, `.`, `_` and `-` (`validPAMServiceName`). The name becomes part of the `sssd.conf.<service>.bak` and `sssd.conf.tmp-<service>` file names, so a name carrying a path could not stay beside `sssd.conf`. `filedir` and every name in `contrib/pam.d` are unaffected.
+- The interface-name check added in v113 (`confSysctlPath`) is what the netutil.go `setSysctl` and realmac.go `rememberSysctl` alerts (#70, #71) refer to: every path reaching them is built through it.
+
+### Not changed
+
+- syslog.go (the TLS CA file), dnsreg.go (TSIG key file), filesync dav.go (store directory): paths the administrator sets on purpose; narrowing them would change what the settings accept. To be dismissed as false positives.
+
+### Verified
+
+- `gofmt -l .` clean, `go vet ./...`, `go test -race -count=1 ./...`, new `TestValidPAMServiceName`; `CGO_ENABLED=0` vet and tests; cross-compiled for linux/amd64, arm64, arm, 386, riscv64 (cross-compiles use the fail-closed PAM stub; only amd64 is verified with PAM).
+
+### Not verified
+
+- CodeQL was not re-run; `fixSSSD` was not run against a real sssd.
+
 ## [113] - 2026-11-24 — CodeQL "Uncontrolled data used in path expression"
 
 ### Fixed
