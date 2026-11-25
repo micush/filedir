@@ -4051,9 +4051,9 @@
         status = h("div", { "aria-live": "polite" });
         dyn = h("div", {});
         stats = h("div", { class: "stats" });
-        const file = h("input", { type: "file", accept: ".tgz,.tar.gz,.zip,application/gzip,application/zip", "aria-label": "Release archive" });
+        const file = h("input", { type: "file", accept: ".tgz,.tar.gz,.zip,application/gzip,application/zip", "aria-label": "Release archive", disabled: true });
         const note = h("span", { class: "muted small", role: "status", "aria-live": "polite" });
-        const online = h("input", { type: "checkbox", "aria-label": "Fetch from online", title: "Download the newest release from GitHub instead of using a file", onchange: () => { file.disabled = online.checked; note.textContent = ""; } });
+        const online = h("input", { type: "checkbox", checked: true, "aria-label": "Fetch from online", title: "Download the newest release from GitHub instead of using a file", onchange: () => { file.disabled = online.checked; note.textContent = ""; } });
         const up = h("button", { class: "btn primary hdr", type: "button", onclick: async (ev) => {
           const f = file.files[0];
           if (!online.checked && !f) { note.textContent = "Choose a release archive first, or tick Fetch from online."; return; }

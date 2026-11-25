@@ -1,5 +1,9 @@
 # Changelog
 
+## [111]
+
+- Operate ▸ Updates: Fetch from online is ticked when the page opens, so Upload fetches the newest release from GitHub. Untick it to choose an archive file.
+
 ## [110]
 
 - Operate ▸ Updates: the Nodes table is laid out with set column widths: the node name gets the most room, the two versions are narrow and sit side by side, then Reachable, Queued and State at an even spacing. Long names are cut with an ellipsis, not pushed into the next column.
