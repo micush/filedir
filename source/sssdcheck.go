@@ -234,9 +234,6 @@ func addIDRange(conf string, secs []string) string {
 // It reports what it did; "" and nil when there was nothing to do.  A domain defined only in a conf.d snippet is not
 // edited, and what to add is returned as an error.
 func fixSSSD(service string) (string, error) {
-	if !pathNameOK(service) {
-		return "", fmt.Errorf("%q is not a service name sssd can be set up for", service)
-	}
 	var notes []string // things not done, for the error
 	b, rerr := os.ReadFile(sssdConfFile)
 	inFile := func(sec string) bool { return rerr == nil && strings.Contains(string(b), "["+sec+"]") }

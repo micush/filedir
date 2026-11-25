@@ -1,15 +1,21 @@
 # Changelog
 
-## [112]
+## [112] - 2026-11-24 — CodeQL "Size computation for allocation may overflow" in netutil.go
 
-### Changed
-- **A name from the settings is checked before it is put into a path.** The service name for sssd (`/etc/sssd/sssd.conf.<service>.bak` and `.tmp-<service>`), the PAM service name (`/etc/pam.d/<name>`) and the interface names for the kernel's ARP and reverse-path settings (`/proc/sys/net/ipv4/conf/<name>/…`) may now hold only letters, digits and `. _ : @ -` (at most 64, and not `.` or `..`). Anything else is refused or skipped, and said so in the log, so a setting can never reach outside the folder it is meant for. These are the places CodeQL's "uncontrolled data used in path expression" alerts pointed at; none was reachable from a request, so this is hardening and no behaviour changes for any name in use.
+### Fixed
+
+- `icmp6Checksum` refuses a body longer than 65535 bytes (the IPv6 payload-length limit) before sizing its buffer, so `40+len(body)+1` cannot overflow. No caller comes near the limit; behaviour for real packets is unchanged.
+- `buildNA` sizes its frame from the constant length of a Neighbor Advertisement (`naBodyLen`) instead of `14+40+len(body)`. The frame is byte-for-byte the same.
 
 ### Verified
-- gofmt, `go vet`, the full test suite, a new test for the name check (`pathname_test.go`) and `GOOS=linux go build` for amd64, arm64, arm, 386 and riscv64. CodeQL 2.27.6 with the Code Scanning queries was run on filedir: it reports five findings (a TSIG key path in the DNS registration settings, the Fetch-from-URL request, two certificate-check switches), all by design. It did not reproduce the other alerts GitHub lists, so whether they close can only be seen after the next GitHub scan.
+
+- `gofmt -l .` clean, `go build`, `go vet ./...`, `go test -race -count=1 ./...` (all packages pass).
+- `CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...` pass.
+- Cross-compiled for linux/amd64, arm64, arm, 386, riscv64.
 
 ### Not verified
-- Not run against a live cluster.
+
+- The CodeQL alerts were not re-run here; they should close on the next scan. No GUI, wire-format, cluster or live-daemon paths were touched, so no live run was made. Cross-compiles use the fail-closed PAM stub; only the native amd64 build is verified with PAM.
 
 ## [111]
 

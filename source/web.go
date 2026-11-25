@@ -287,9 +287,7 @@ func (w *WebServer) sanityWarnings(cfg WebConfig) {
 	if err != nil {
 		warnf("web: sssd: %v", err)
 	}
-	if !pathNameOK(cfg.PAMService) {
-		warnf("web: the PAM service name %q is not a plain name; logins will not work until it is", cfg.PAMService)
-	} else if _, err := os.Stat("/etc/pam.d/" + cfg.PAMService); err != nil {
+	if _, err := os.Stat("/etc/pam.d/" + cfg.PAMService); err != nil {
 		warnf("web: /etc/pam.d/%s not found — PAM will fall back to its 'other' policy, which usually denies every login (see contrib/pam.d/)", cfg.PAMService)
 	}
 }
