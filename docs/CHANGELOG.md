@@ -1,5 +1,23 @@
 # Changelog
 
+## [113] - 2026-11-24 — CodeQL "Uncontrolled data used in path expression"
+
+### Fixed
+
+- Per-interface kernel settings (`rp_filter`, `arp_ignore`, `arp_announce` under `/proc/sys/net/ipv4/conf/`) are built by `confSysctlPath`, which refuses an interface name that is empty, longer than 15 bytes, `.`/`..`, or contains a slash, NUL or blank. A bad name is reported as a failed setting instead of reaching the filesystem. Real names (`eth0`, `all`, `fd137.1`) give the same paths as before. Covers netutil.go `ensureSysctl`/`relaxReversePath` and the two loops in engine.go.
+
+### Not changed
+
+- dnsreg.go (TSIG key file), filesync dav.go / index.go (store directory) and migrate.go: the paths are the administrator's own configuration (a key file, the folder being synced) or already checked with `filepath.IsLocal` (migrate.go, names from the index). Narrowing them would change what the settings accept, so those alerts are to be dismissed as false positives.
+
+### Verified
+
+- `gofmt -l .` clean, `go vet ./...`, `go test -race -count=1 ./...`, new `TestConfSysctlPathRejectsTraversal`; `CGO_ENABLED=0` vet and tests; cross-compiled for linux/amd64, arm64, arm, 386, riscv64 (cross-compiles use the fail-closed PAM stub; only amd64 is verified with PAM).
+
+### Not verified
+
+- CodeQL was not re-run. No live daemon run was made; the ARP sysctl path was only exercised by unit tests.
+
 ## [112] - 2026-11-24 — CodeQL "Size computation for allocation may overflow" in netutil.go
 
 ### Fixed

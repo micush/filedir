@@ -32,3 +32,16 @@ func TestAnnounceFramesAreNeutral(t *testing.T) {
 		t.Fatal("NS checksum does not verify")
 	}
 }
+
+func TestConfSysctlPathRejectsTraversal(t *testing.T) {
+	for _, bad := range []string{"", ".", "..", "../x", "a/b", "a b", "a\x00b", "averyveryverylongname"} {
+		if _, ok := confSysctlPath("/proc/sys/net/ipv4/conf/", bad, "rp_filter"); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, good := range []string{"eth0", "all", "fd137.1", "en0.100"} {
+		if p, ok := confSysctlPath("/r/", good, "f"); !ok || p != "/r/"+good+"/f" {
+			t.Errorf("%q: got %q %v", good, p, ok)
+		}
+	}
+}

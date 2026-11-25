@@ -1273,8 +1273,9 @@ func (e *Engine) setupVIPLocked(macvlanUp bool) {
 		if !e.vipLoAdded {
 			if e.af == afIPv4 {
 				for _, dev := range []string{e.cfg.Interface, "all"} {
-					base := "/proc/sys/net/ipv4/conf/" + dev + "/"
-					if !e.rememberSysctl(base+"arp_ignore", "1") || !e.rememberSysctl(base+"arp_announce", "2") {
+					ign, ok1 := confSysctlPath("/proc/sys/net/ipv4/conf/", dev, "arp_ignore")
+					ann, ok2 := confSysctlPath("/proc/sys/net/ipv4/conf/", dev, "arp_announce")
+					if !ok1 || !ok2 || !e.rememberSysctl(ign, "1") || !e.rememberSysctl(ann, "2") {
 						warnf("could not set arp_ignore/arp_announce on %s: this node may answer ARP for the VIP (%s)", dev, e.tag())
 					}
 				}
@@ -1291,8 +1292,9 @@ func (e *Engine) setupVIPLocked(macvlanUp bool) {
 	} else if macvlanUp && !e.vipLoAdded {
 		if e.af == afIPv4 {
 			for _, dev := range []string{e.cfg.Interface, vmacName(e.cfg.GroupID, e.afnID), "all"} {
-				base := "/proc/sys/net/ipv4/conf/" + dev + "/"
-				if !ensureSysctl(base+"arp_ignore", "1") || !ensureSysctl(base+"arp_announce", "2") {
+				ign, ok1 := confSysctlPath("/proc/sys/net/ipv4/conf/", dev, "arp_ignore")
+				ann, ok2 := confSysctlPath("/proc/sys/net/ipv4/conf/", dev, "arp_announce")
+				if !ok1 || !ok2 || !ensureSysctl(ign, "1") || !ensureSysctl(ann, "2") {
 					warnf("could not set arp_ignore/arp_announce on %s: this node may answer ARP for the VIP (%s)", dev, e.tag())
 				}
 			}

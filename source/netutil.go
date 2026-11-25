@@ -249,6 +249,15 @@ func vipAddr(vip string) (netip.Addr, error) {
 // procIPv4Conf is where the per-interface IPv4 settings live (replaceable in tests).
 var procIPv4Conf = "/proc/sys/net/ipv4/conf/"
 
+// confSysctlPath builds root+dev+"/"+file for an interface's kernel setting; false when dev is not a plausible
+// interface name (empty, over 15 bytes, or containing a slash, NUL or blank, which would let it leave the directory).
+func confSysctlPath(root, dev, file string) (string, bool) {
+	if dev == "" || len(dev) > 15 || dev == "." || dev == ".." || strings.ContainsAny(dev, "/\x00 \t\r\n") {
+		return "", false
+	}
+	return root + dev + "/" + file, true
+}
+
 // ensureSysctl sets a kernel setting and reads it back; false means it did not take (a container that may not write
 // sysctls, say), which the caller reports.
 func ensureSysctl(path, val string) bool {
@@ -264,7 +273,11 @@ func ensureSysctl(path, val string) bool {
 // It returns what it changed ("all", "eth0", …) and what it could not.
 func relaxReversePath(dev, parent string) (changed, failed []string) {
 	for _, name := range []string{dev, parent, "all"} {
-		path := procIPv4Conf + name + "/rp_filter"
+		path, ok := confSysctlPath(procIPv4Conf, name, "rp_filter")
+		if !ok {
+			failed = append(failed, name)
+			continue
+		}
 		b, err := os.ReadFile(path)
 		if err != nil || strings.TrimSpace(string(b)) != "1" {
 			continue
