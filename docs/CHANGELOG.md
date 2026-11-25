@@ -1,5 +1,9 @@
 # Changelog
 
+## [104]
+
+- Files: the Shift+Delete confirmation is titled "Permanently delete NAME?" and its button says Delete.
+
 ## [103]
 
 - Files: the Shift+Delete confirmation is shorter: "The file is deleted everywhere and cannot be restored."
