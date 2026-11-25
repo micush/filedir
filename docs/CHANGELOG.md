@@ -1,5 +1,9 @@
 # Changelog
 
+## [103]
+
+- Files: the Shift+Delete confirmation is shorter: "The file is deleted everywhere and cannot be restored."
+
 ## [102]
 
 - Files: Shift+Delete now deletes everywhere with no copy kept. In v101 the other nodes still put their copy in their trash. A deletion made this way is marked in the index entries (`purge`), and every node it reaches removes the file at once instead of moving it to the trash. A node on an older version ignores the mark and keeps its copy in its trash as before.
