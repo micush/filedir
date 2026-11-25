@@ -5364,7 +5364,7 @@
     }
     // Speed test: one node sends and another receives (and does the work): the data over the file channel with nothing else in the way,
     // how fast the receiver hashes and writes, and all of it together as a replication does it.  The test is run on the receiver.
-    let speed, speedCard, speedRes = null, speedBusy = false, speedFrom = null, speedTo = null, speedKey = "";
+    let speed, speedCard, speedRes = null, speedBusy = false, speedFrom = null, speedTo = null, speedKey = null;
     const targetId = () => { const m = state.target ? state.nodes.find((n) => n.addr === state.target) : state.nodes.find((n) => n.self); return m ? m.node_id : null; };
     // The nodes the card offers are the ones the last statuses named, and a node stays in the list for three minutes after the last one that
     // named it: a node that is busy (with the test itself, or an upload) may miss a status, and the card was gone until it answered again.
@@ -5372,8 +5372,8 @@
     const knownNodes = () => [...speedKnown.values()].sort((x, y) => (x.name || x.node).localeCompare(y.name || y.node, undefined, { numeric: true, sensitivity: "base" }));
     function drawSpeed() {
       const nodes = knownNodes(), ids = nodes.map((n) => n.node);
-      speedCard.hidden = nodes.length < 2 || !nodes.some((n) => n.folders.length);
-      if (speedCard.hidden) return;
+      speedCard.hidden = false;   // always there: a card that comes and goes is worse than one that says what it needs
+      if (nodes.length < 2 || !nodes.some((n) => n.folders.length)) { speed.replaceChildren(h("div", { class: "muted" }, "The speed test needs two nodes that share a folder.")); return; }
       const nameOf = (id) => { const n = nodes.find((x) => x.node === id); return n ? n.name || n.node : id || "this node"; };
       if (!ids.includes(speedTo)) speedTo = ids.includes(targetId()) ? targetId() : ids[0];
       if (!ids.includes(speedFrom) || speedFrom === speedTo) speedFrom = ids.find((i) => i !== speedTo);
@@ -5507,7 +5507,7 @@
       try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); const sx = [...box.querySelectorAll(".scroll")].map((el) => el.scrollLeft); draw(r); box.querySelectorAll(".scroll").forEach((el, i) => { el.scrollLeft = sx[i] || 0; }); } } catch (e) { fail(status)(e); }   // the page is redrawn every few seconds: a table that was scrolled stays where it was
     }
     return {
-      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep); speedCard = section("Speed test", speed); speedCard.hidden = true; repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard, speedCard); load(); },
+      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep); speedCard = section("Speed test", speed); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard, speedCard); load(); },
       async poll() { await load(); },
       poll_ms: 5000,
     };

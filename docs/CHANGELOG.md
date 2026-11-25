@@ -1,5 +1,9 @@
 # Changelog
 
+## [99]
+
+- Files ▸ Speed test: the card is always shown. With fewer than two nodes sharing a folder it says what it needs, in place of disappearing and coming back.
+
 ## [98]
 
 - A folder dropped on the Files page no longer stops at the first file the folder's ignore list covers (such as one inside `.git/`). The node now answers "skipped" for such a file or folder, nothing is written, and the upload goes on with the rest; the page says at the end how many were left out. Before, the refusal was an error and ended the whole upload.
