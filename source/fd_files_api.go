@@ -386,7 +386,10 @@ func (w *WebServer) handleFilesRename(rw http.ResponseWriter, r *http.Request, s
 }
 
 func (w *WebServer) handleFilesDelete(rw http.ResponseWriter, r *http.Request, s *session) {
-	var in struct{ Folder, Path string }
+	var in struct {
+		Folder, Path string
+		Permanent    bool // Shift+Delete: not kept in any node's trash
+	}
 	if json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in) != nil {
 		jsonError(rw, http.StatusBadRequest, "bad request")
 		return
@@ -395,12 +398,16 @@ func (w *WebServer) handleFilesDelete(rw http.ResponseWriter, r *http.Request, s
 	if f == nil {
 		return
 	}
-	if err := f.f.Delete(in.Path); err != nil {
+	del, kept := f.f.Delete, "kept in the trash"
+	if in.Permanent {
+		del, kept = f.f.DeleteForGood, "not kept in the trash"
+	}
+	if err := del(in.Path); err != nil {
 		fdFail(rw, err)
 		return
 	}
 	f.rescan()
-	fdAudit(s, "files: %s: deleted %s (kept in the trash)", f.cfg.ID, in.Path)
+	fdAudit(s, "files: %s: deleted %s (%s)", f.cfg.ID, in.Path, kept)
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true})
 }
 

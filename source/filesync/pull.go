@@ -312,7 +312,11 @@ func (f *Folder) apply(fi, l FileInfo, conflict bool, src Source) (bool, error) 
 	switch {
 	case fi.Deleted:
 		if st, err := os.Lstat(p); err == nil {
-			if err := f.displace(p, st, &l, false); err != nil {
+			if fi.Purge && !st.IsDir() {
+				if err := os.Remove(p); err != nil {
+					return false, err
+				}
+			} else if err := f.displace(p, st, &l, false); err != nil {
 				return false, err
 			}
 		}

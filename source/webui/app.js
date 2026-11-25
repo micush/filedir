@@ -4580,10 +4580,11 @@
       return inp;
     }
     const renameDialog = (e) => ask("Rename", "", { input: e.name, label: "New name", ok: "Rename" }, (v) => (!v || v.includes("/") ? "Give it a name without a slash." : act(() => api("POST", "/api/files/rename", { folder: kept.folder, from: e.path, to: join(parent(e.path), v) }))));
-    const removeMany = (list, fo = kept.folder) => !(list = list.filter((e) => !e.mount)).length ? null : ask(list.length === 1 ? "Delete " + list[0].name + "?" : "Delete " + list.length + " items?",
-      (list.length === 1 ? (list[0].kind === "dir" ? "The folder and everything in it is" : "The file is") : "These " + list.length + " items, and everything in the folders among them, are") + " deleted here and on every node. A copy stays in each node's trash for 30 days.",
-      { ok: "Delete", danger: true }, () => act(async () => {
-        for (const e of list) await api("POST", "/api/files/delete", { folder: e.folder || fo, path: e.path });   // a match in the filter says which folder it is in
+    // perm (Shift+Delete): no copy is kept in the trash, here or on the other nodes.
+    const removeMany = (list, fo = kept.folder, perm = false) => !(list = list.filter((e) => !e.mount)).length ? null : ask(perm ? (list.length === 1 ? "Delete " + list[0].name + " for good?" : "Delete " + list.length + " items for good?") : (list.length === 1 ? "Delete " + list[0].name + "?" : "Delete " + list.length + " items?"),
+      (list.length === 1 ? (list[0].kind === "dir" ? "The folder and everything in it is" : "The file is") : "These " + list.length + " items, and everything in the folders among them, are") + " deleted here and on every node. " + (perm ? "Nothing is kept in any node's trash, so it cannot be got back." : "A copy stays in each node's trash for 30 days."),
+      { ok: perm ? "Delete for good" : "Delete", danger: true }, () => act(async () => {
+        for (const e of list) await api("POST", "/api/files/delete", { folder: e.folder || fo, path: e.path, ...(perm ? { permanent: true } : {}) });   // a match in the filter says which folder it is in
         sel.clear();
       }));
     const copyText = (t) => { try { navigator.clipboard.writeText(t); } catch (_) { /* the browser did not allow it */ } };
@@ -4979,7 +4980,7 @@
       if (k === "Enter") { open(e); return; }
       if (k === "ContextMenu" || (k === "F10" && ev.shiftKey)) { ev.preventDefault(); ctx(ev, e, i); return; }
       if (k === "Delete" && trash.on) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } deleteTrash(selected()); return; }
-      if (k === "Delete" && canDelete()) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } removeMany(selected()); return; }
+      if (k === "Delete" && canDelete()) { ev.preventDefault(); if (!sel.has(sk(e))) { sel.clear(); sel.add(sk(e)); } removeMany(selected(), kept.folder, ev.shiftKey); return; }
       if (k === "Escape") { sel.clear(); paintSel(); return; }
       if ((k === "a" || k === "A") && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); selectAll(); return; }
       let to = -1;
@@ -5085,7 +5086,7 @@
           if (ev.target.tagName === "INPUT") return;
           if (ev.key === "Enter") go(fo, p);
           else if (ev.key === "F2" && p) { ev.preventDefault(); treeRename(fo, p); }
-          else if (ev.key === "Delete" && p && canDelete()) { ev.preventDefault(); removeMany([{ folder: fo, path: p, name: p.split("/").pop(), kind: "dir" }], fo); }
+          else if (ev.key === "Delete" && p && canDelete()) { ev.preventDefault(); removeMany([{ folder: fo, path: p, name: p.split("/").pop(), kind: "dir" }], fo, ev.shiftKey); }
           else if (ev.key === "ArrowRight" && !isOpen) toggle(fo, p);
           else if (ev.key === "ArrowLeft" && isOpen) toggle(fo, p);
           else if (ev.key === "ContextMenu" || (ev.key === "F10" && ev.shiftKey)) treeMenu(fo, p)(ev);
@@ -5205,7 +5206,7 @@
           onclick: (e) => { if (e.target === box || e.target.classList.contains("empty") || e.target.classList.contains("fm-fill")) { sel.clear(); paintSel(); } },
           onkeydown: (e) => {
             if ((e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey) && e.target === box) { e.preventDefault(); selectAll(); }
-            else if (e.key === "Delete" && e.target === box && sel.size) { e.preventDefault(); if (trash.on) deleteTrash(selected()); else if (canDelete()) removeMany(selected()); }   // the selection, with the focus on the list itself (after Ctrl+A, say)
+            else if (e.key === "Delete" && e.target === box && sel.size) { e.preventDefault(); if (trash.on) deleteTrash(selected()); else if (canDelete()) removeMany(selected(), kept.folder, e.shiftKey); }   // the selection, with the focus on the list itself (after Ctrl+A, say)
           } });
         picker = h("input", { type: "file", multiple: true, class: "hidden", "aria-label": "Choose files to upload" });
         dirPicker = h("input", { type: "file", multiple: true, webkitdirectory: true, class: "hidden", "aria-label": "Choose a folder to upload" });

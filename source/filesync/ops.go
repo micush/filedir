@@ -341,7 +341,7 @@ func (f *Folder) Delete(name string) error {
 	if _, err := os.Lstat(p); err != nil {
 		if os.IsNotExist(err) {
 			// gone from the disk but still in the index (a scan refused to record it): deleting it again records it
-			if n, terr := f.tombstoneN(name); terr != nil || n > 0 {
+			if n, terr := f.tombstoneN(name, false); terr != nil || n > 0 {
 				return terr
 			}
 			return ErrNotFound
@@ -355,21 +355,46 @@ func (f *Folder) Delete(name string) error {
 	return f.tombstone(name)
 }
 
+// DeleteForGood removes a file, link or whole folder without keeping a copy in the trash: not here, and not on the nodes the deletion
+// reaches (its entries say so).  A node that is older than this change still keeps its copy in its own trash.
+func (f *Folder) DeleteForGood(name string) error {
+	p, err := f.resolve(name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(p); err != nil {
+		if os.IsNotExist(err) {
+			return f.Delete(name) // only the index remembers it: the same as an ordinary delete
+		}
+		return err
+	}
+	f.doom(name, doomEntry{any: true})
+	if err := os.RemoveAll(p); err != nil {
+		return err
+	}
+	return f.tombstoneAs(name, true)
+}
+
 // tombstone records at once that a name, and everything under it, is gone.  A person deleted it on purpose, so the scan's refusal to
 // delete most of a folder (which guards against a disk that came back empty) must not apply: without this, deleting a folder with
 // hundreds of files in it was refused at the next scan, and the folder stayed in the list on every node.
 func (f *Folder) tombstone(name string) error {
-	_, err := f.tombstoneN(name)
+	_, err := f.tombstoneN(name, false)
 	return err
 }
 
-func (f *Folder) tombstoneN(name string) (int, error) {
+func (f *Folder) tombstoneAs(name string, purge bool) error {
+	_, err := f.tombstoneN(name, purge)
+	return err
+}
+
+func (f *Folder) tombstoneN(name string, purge bool) (int, error) {
 	var gone []FileInfo
 	for _, l := range f.ix.snapshot() {
 		if l.Deleted || !(l.Name == name || strings.HasPrefix(l.Name, name+"/")) {
 			continue
 		}
-		gone = append(gone, FileInfo{Name: l.Name, Kind: l.Kind, Deleted: true, ModNs: f.now().UnixNano(), Version: l.Version.Bump(f.cfg.Node), By: f.cfg.Node})
+		gone = append(gone, FileInfo{Name: l.Name, Kind: l.Kind, Deleted: true, Purge: purge, ModNs: f.now().UnixNano(), Version: l.Version.Bump(f.cfg.Node), By: f.cfg.Node})
 	}
 	return len(gone), f.ix.put(gone...)
 }

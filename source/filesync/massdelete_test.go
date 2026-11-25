@@ -80,3 +80,31 @@ func TestDeletingABigFolderIsNotAMassDeleteAccident(t *testing.T) {
 		t.Fatalf("a second delete: %v", err)
 	}
 }
+
+// Shift+Delete: no node keeps a copy: not the one that deleted, not the one the deletion reaches.
+func TestDeleteForGood(t *testing.T) {
+	a := newNode(t, "A")
+	b := newNode(t, "B")
+	a.write(t, "d/x.txt", "x")
+	a.write(t, "y.txt", "y")
+	b.sync(t, a)
+	if err := a.f.DeleteForGood("d"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.f.DeleteForGood("y.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, n := a.f.TrashSize(); n != 0 {
+		t.Fatalf("the trash of the deleting node holds %d files", n)
+	}
+	if err := a.f.DeleteForGood("nope"); err != ErrNotFound {
+		t.Fatalf("a missing name: %v", err)
+	}
+	b.sync(t, a)
+	if got := fmt.Sprint(b.tree(t)); got != "map[]" {
+		t.Fatalf("the deletion did not reach the other node: %s", got)
+	}
+	if _, n := b.f.TrashSize(); n != 0 {
+		t.Fatalf("the other node's trash holds %d files, want 0", n)
+	}
+}

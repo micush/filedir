@@ -45,6 +45,7 @@ type FileInfo struct {
 	ModNs   int64   `json:"mod"`            // modification time, unix nanoseconds: it picks a winner between concurrent changes and nothing else
 	Target  string  `json:"target,omitempty"`
 	Deleted bool    `json:"del,omitempty"`
+	Purge   bool    `json:"purge,omitempty"` // a deletion made with Shift+Delete: the nodes it reaches do not keep a copy in their trash
 	Version Vector  `json:"ver"`
 	By      NodeID  `json:"by"`            // the node that made this change
 	Seq     int64   `json:"seq"`           // position in the sending node's index: what a peer asks "after"

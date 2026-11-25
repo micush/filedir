@@ -1,5 +1,13 @@
 # Changelog
 
+## [102]
+
+- Files: Shift+Delete now deletes everywhere with no copy kept. In v101 the other nodes still put their copy in their trash. A deletion made this way is marked in the index entries (`purge`), and every node it reaches removes the file at once instead of moving it to the trash. A node on an older version ignores the mark and keeps its copy in its trash as before.
+
+## [101]
+
+- Files: Shift+Delete deletes for good. The confirmation says so, and this node keeps nothing in its trash. The deletion still reaches the other nodes, which keep their own copy in their trash for 30 days as before. Plain Delete is unchanged.
+
 ## [100]
 
 - Files ▸ Speed test: the card was empty (or missing) after leaving the Files page and coming back. The page remembered which nodes it had drawn the card for, and on coming back it saw nothing had changed and did not draw it into the new card. It is drawn every time the page opens now. This is the cause of the card that came and went in v87–v99; found by reproducing it in a headless browser with a status like the real one and switching away and back.
