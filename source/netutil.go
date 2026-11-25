@@ -264,6 +264,10 @@ func ensureSysctl(path, val string) bool {
 // It returns what it changed ("all", "eth0", …) and what it could not.
 func relaxReversePath(dev, parent string) (changed, failed []string) {
 	for _, name := range []string{dev, parent, "all"} {
+		if !pathNameOK(name) {
+			failed = append(failed, name)
+			continue
+		}
 		path := procIPv4Conf + name + "/rp_filter"
 		b, err := os.ReadFile(path)
 		if err != nil || strings.TrimSpace(string(b)) != "1" {
@@ -530,4 +534,19 @@ func buildNSFor(senderMAC [6]byte, src, target [16]byte) []byte {
 	f = append(f, src[:]...)
 	f = append(f, dst[:]...)
 	return append(f, body...)
+}
+
+// pathNameOK says whether s is fit to be one part of a path under a system folder (an interface name, a service name): letters, digits
+// and . _ : @ - only, at most 64 of them, and not "." or "..".  A name that comes from the configuration is checked with this before it is
+// put into a path, so a setting can never reach outside the folder it is meant for.
+func pathNameOK(s string) bool {
+	if s == "" || len(s) > 64 || s == "." || s == ".." {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == ':' || c == '@' || c == '-') {
+			return false
+		}
+	}
+	return true
 }

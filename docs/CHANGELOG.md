@@ -1,5 +1,16 @@
 # Changelog
 
+## [112]
+
+### Changed
+- **A name from the settings is checked before it is put into a path.** The service name for sssd (`/etc/sssd/sssd.conf.<service>.bak` and `.tmp-<service>`), the PAM service name (`/etc/pam.d/<name>`) and the interface names for the kernel's ARP and reverse-path settings (`/proc/sys/net/ipv4/conf/<name>/…`) may now hold only letters, digits and `. _ : @ -` (at most 64, and not `.` or `..`). Anything else is refused or skipped, and said so in the log, so a setting can never reach outside the folder it is meant for. These are the places CodeQL's "uncontrolled data used in path expression" alerts pointed at; none was reachable from a request, so this is hardening and no behaviour changes for any name in use.
+
+### Verified
+- gofmt, `go vet`, the full test suite, a new test for the name check (`pathname_test.go`) and `GOOS=linux go build` for amd64, arm64, arm, 386 and riscv64. CodeQL 2.27.6 with the Code Scanning queries was run on filedir: it reports five findings (a TSIG key path in the DNS registration settings, the Fetch-from-URL request, two certificate-check switches), all by design. It did not reproduce the other alerts GitHub lists, so whether they close can only be seen after the next GitHub scan.
+
+### Not verified
+- Not run against a live cluster.
+
 ## [111]
 
 - Operate ▸ Updates: Fetch from online is ticked when the page opens, so Upload fetches the newest release from GitHub. Untick it to choose an archive file.
