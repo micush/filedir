@@ -1,5 +1,25 @@
 # Changelog
 
+## [110]
+
+- Operate ▸ Updates: the Nodes table is laid out with set column widths: the node name gets the most room, the two versions are narrow and sit side by side, then Reachable, Queued and State at an even spacing. Long names are cut with an ellipsis, not pushed into the next column.
+
+## [109]
+
+- Operate ▸ Updates: the Nodes table has equal-width columns, all left-aligned, so the space between them is the same.
+
+## [108]
+
+- Operate ▸ Updates: even more space between Source and Reachable.
+
+## [107]
+
+- Operate ▸ Updates: more space between the Source and Reachable columns in the Nodes table.
+
+## [106]
+
+- Operate ▸ Updates: in the Nodes table the Running and Source versions come right after the node name, ahead of Reachable.
+
 ## [105]
 
 - Files: the Delete confirmation says "The file is moved to the trash and can be restored if needed."

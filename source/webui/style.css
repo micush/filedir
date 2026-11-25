@@ -1047,3 +1047,11 @@ table.fm.icons input.fm-rename { width: 100%; }
 div.sp-all { border-top: 1px solid var(--border); padding-top: .9rem; }
 .sp-sub { font-size: .8rem; margin-top: .25rem; }
 .sp-foot { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .8rem; margin-top: 1.1rem; border-top: 1px solid var(--border); padding-top: .7rem; }
+
+/* Updates ▸ Nodes: the node name gets the room, the versions are narrow, the pills sit together; all left-aligned */
+table.evencols { table-layout: fixed; width: 100%; }
+table.evencols th.w-cb { width: 3rem; }
+table.evencols th.w-node { width: 26%; }
+table.evencols th.w-ver { width: 11%; }
+table.evencols th.w-pill { width: 15%; }
+table.evencols td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
