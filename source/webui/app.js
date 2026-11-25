@@ -5507,7 +5507,7 @@
       try { const r = (await api("GET", "/api/files/status")).data; if (my === seq) { clear(status); const sx = [...box.querySelectorAll(".scroll")].map((el) => el.scrollLeft); draw(r); box.querySelectorAll(".scroll").forEach((el, i) => { el.scrollLeft = sx[i] || 0; }); } } catch (e) { fail(status)(e); }   // the page is redrawn every few seconds: a table that was scrolled stays where it was
     }
     return {
-      mount(main) { status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep); speedCard = section("Speed test", speed); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard, speedCard); load(); },
+      mount(main) { speedKey = null; status = h("div", { "aria-live": "polite" }); box = h("div", {}); rep = h("div", {}); speed = h("div", { class: "speedtest" }); repCard = section("Replication", rep); speedCard = section("Speed test", speed); repCard.hidden = true; disk = h("div", { class: "disks" }); diskCard = section("Disk space", disk); diskCard.hidden = true; main.append(status, section("Files", box), diskCard, repCard, speedCard); load(); },
       async poll() { await load(); },
       poll_ms: 5000,
     };

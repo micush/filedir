@@ -1,5 +1,9 @@
 # Changelog
 
+## [100]
+
+- Files ▸ Speed test: the card was empty (or missing) after leaving the Files page and coming back. The page remembered which nodes it had drawn the card for, and on coming back it saw nothing had changed and did not draw it into the new card. It is drawn every time the page opens now. This is the cause of the card that came and went in v87–v99; found by reproducing it in a headless browser with a status like the real one and switching away and back.
+
 ## [99]
 
 - Files ▸ Speed test: the card is always shown. With fewer than two nodes sharing a folder it says what it needs, in place of disappearing and coming back.
