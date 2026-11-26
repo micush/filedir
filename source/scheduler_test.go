@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -85,14 +87,40 @@ func waitFor(t *testing.T, f func() bool) {
 	t.Fatal("timed out")
 }
 
+// useScripts makes a script folder the scheduler may use and puts the given scripts (name: body) in it.
+func useScripts(t *testing.T, scripts map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := schedScriptDir
+	schedScriptDir = dir
+	t.Cleanup(func() { schedScriptDir = old })
+	for n, body := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 func TestSchedulerShellCommand(t *testing.T) {
+	useScripts(t, map[string]string{
+		"echo.sh": "echo hello; echo oops >&2",
+		"slow.sh": "sleep 30",
+		"bad.sh":  "exit 3",
+		"ign.sh":  "echo stopped; exit 3",
+		"args.sh": `echo "[$1][$2]"`,
+	})
 	h := newHarness(t)
-	ok := mustTask(t, SchedTask{ID: "s1", Name: "echo", Action: "shell", Command: "echo hello; echo oops >&2", Freq: "daily"})
-	slow := mustTask(t, SchedTask{ID: "s2", Name: "slow", Action: "shell", Command: "sleep 30", TimeoutSec: 1, Freq: "daily"})
-	bad := mustTask(t, SchedTask{ID: "s3", Name: "bad", Action: "shell", Command: "exit 3", Freq: "daily"})
-	ign := mustTask(t, SchedTask{ID: "s4", Name: "ign", Action: "shell", Command: "echo stopped; exit 3", IgnoreExit: true, Freq: "daily"})
-	ignSlow := mustTask(t, SchedTask{ID: "s5", Name: "ignslow", Action: "shell", Command: "sleep 30", TimeoutSec: 1, IgnoreExit: true, Freq: "daily"})
-	h.s.SetTasks([]SchedTask{ok, slow, bad, ign, ignSlow})
+	ok := mustTask(t, SchedTask{ID: "s1", Name: "echo", Action: "shell", Command: "echo.sh", Freq: "daily"})
+	slow := mustTask(t, SchedTask{ID: "s2", Name: "slow", Action: "shell", Command: "slow.sh", TimeoutSec: 1, Freq: "daily"})
+	bad := mustTask(t, SchedTask{ID: "s3", Name: "bad", Action: "shell", Command: "bad.sh", Freq: "daily"})
+	ign := mustTask(t, SchedTask{ID: "s4", Name: "ign", Action: "shell", Command: "ign.sh", IgnoreExit: true, Freq: "daily"})
+	ignSlow := mustTask(t, SchedTask{ID: "s5", Name: "ignslow", Action: "shell", Command: "slow.sh", TimeoutSec: 1, IgnoreExit: true, Freq: "daily"})
+	args := mustTask(t, SchedTask{ID: "s6", Name: "args", Action: "shell", Command: `args.sh 'a b' "c; rm -rf /"`, Freq: "daily"})
+	h.s.SetTasks([]SchedTask{ok, slow, bad, ign, ignSlow, args})
 	idle := func() bool {
 		for _, r := range h.s.Status().History {
 			if r.Status == "running" {
@@ -101,7 +129,7 @@ func TestSchedulerShellCommand(t *testing.T) {
 		}
 		return true
 	}
-	for _, id := range []string{"s1", "s2", "s3", "s4", "s5"} { // one at a time
+	for _, id := range []string{"s1", "s2", "s3", "s4", "s5", "s6"} { // one at a time
 		if err := h.s.RunNow(id, "test"); err != nil {
 			t.Fatal(err)
 		}
@@ -125,6 +153,49 @@ func TestSchedulerShellCommand(t *testing.T) {
 	}
 	if by["s5"].Status != "failed" {
 		t.Errorf("a command over its limit fails even when the status is ignored: %+v", by["s5"])
+	}
+	if by["s6"].Status != "ok" || !strings.Contains(by["s6"].Output, "[a b][c; rm -rf /]") {
+		t.Errorf("arguments reach the script as they are written, with no shell: %+v", by["s6"])
+	}
+}
+
+func TestSchedScriptRules(t *testing.T) {
+	dir := useScripts(t, map[string]string{"ok.sh": "true", "open.sh": "true", "plain": "true"})
+	os.Chmod(filepath.Join(dir, "open.sh"), 0o777) // anyone may write it
+	os.Chmod(filepath.Join(dir, "plain"), 0o644)   // cannot be run
+	os.Symlink("/bin/true", filepath.Join(dir, "link.sh"))
+	for cmd, want := range map[string]string{
+		"ok.sh":       "",
+		"ok.sh a b":   "",
+		"../x":        "not a script name",
+		"/bin/true":   "not a script name",
+		"sub/ok.sh":   "not a script name",
+		"":            "empty",
+		"ok.sh 'open": "quote",
+		"nope.sh":     "no script",
+		"open.sh":     "not writable by anyone else",
+		"plain":       "runnable",
+		"link.sh":     "plain file",
+	} {
+		_, _, err := schedScript(cmd)
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%q: %v", cmd, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%q: want an error about %q, got %v", cmd, want, err)
+		}
+	}
+	os.Chmod(dir, 0o777)
+	if _, _, err := schedScript("ok.sh"); err == nil || !strings.Contains(err.Error(), "not writable by anyone else") {
+		t.Errorf("a folder anyone can write to: %v", err)
+	}
+	schedScriptDir = filepath.Join(dir, "missing")
+	if _, _, err := schedScript("ok.sh"); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("no folder: %v", err)
+	}
+	bad := SchedTask{ID: "x", Name: "n", Action: "shell", Command: "a/b", Freq: "daily"}
+	if err := bad.validate(); err == nil {
+		t.Error("a task naming a folder was accepted")
 	}
 }
 

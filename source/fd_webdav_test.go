@@ -48,6 +48,9 @@ func TestWebDAV(t *testing.T) {
 		t.Fatalf("options: %d %v", code, h)
 	}
 	// no root folder: /dav/ lists the folders
+	if code, b, _ := dav(t, e, "pat", "PROPFIND", "/dav", "", "Depth", "1"); code != 207 || !strings.Contains(b, "docs") {
+		t.Fatalf("PROPFIND /dav without the slash = %d %q, want the listing and no redirect", code, b)
+	}
 	code, b, _ := dav(t, e, "pat", "PROPFIND", "/dav/", "", "Depth", "1")
 	if code != 207 || !strings.Contains(b, "<D:href>/dav/docs/</D:href>") {
 		t.Fatalf("top: %d %s", code, b)

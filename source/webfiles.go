@@ -113,7 +113,7 @@ func (w *WebServer) filesSiteHandler() http.Handler {
 	mux.Handle("PUT /up/{token}/{name}", on(http.HandlerFunc(w.handleLinkUpload)))
 	mux.Handle("POST /up/{token}/{name}", on(http.HandlerFunc(w.handleLinkUpload)))
 	mux.Handle("/dav/", on(http.HandlerFunc(w.handleDAV)))
-	mux.Handle("/dav", on(http.RedirectHandler("/dav/", http.StatusPermanentRedirect)))
+	mux.Handle("/dav", on(http.HandlerFunc(w.handleDAV))) // answered as /dav/ is: a client that asks for /dav (Dolphin, davfs2) does not follow a redirect on PROPFIND
 	mux.Handle("POST /api/files/copy", authed(w.handleFilesCopy))
 	mux.Handle("GET /api/files/copy", authed(w.handleFilesCopyStatus))
 	mux.Handle("GET /api/files/size", authed(w.handleFilesSize))

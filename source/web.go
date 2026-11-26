@@ -287,7 +287,9 @@ func (w *WebServer) sanityWarnings(cfg WebConfig) {
 	if err != nil {
 		warnf("web: sssd: %v", err)
 	}
-	if _, err := os.Stat("/etc/pam.d/" + cfg.PAMService); err != nil {
+	if !pathNameOK(cfg.PAMService) {
+		warnf("web: the PAM service name %q is not a plain name; logins will not work until it is", cfg.PAMService)
+	} else if !pamServiceExists(cfg.PAMService) {
 		warnf("web: /etc/pam.d/%s not found — PAM will fall back to its 'other' policy, which usually denies every login (see contrib/pam.d/)", cfg.PAMService)
 	}
 }
@@ -1164,4 +1166,19 @@ func (w *WebServer) handleLDAPTest(rw http.ResponseWriter, r *http.Request, s *s
 	}
 	infof("web: ldap test by %q: ok=%v", s.user, o.OK)
 	writeJSON(rw, http.StatusOK, map[string]any{"ok": true, "data": map[string]any{"ok": o.OK, "read_only": o.ReadOnly, "steps": o.Steps}})
+}
+
+// pamServiceExists reports whether /etc/pam.d holds a file of that name. The
+// name is matched against the folder's own listing, never joined into a path.
+func pamServiceExists(name string) bool {
+	ents, err := os.ReadDir("/etc/pam.d")
+	if err != nil {
+		return false
+	}
+	for _, e := range ents {
+		if e.Name() == name {
+			return true
+		}
+	}
+	return false
 }

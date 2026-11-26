@@ -142,10 +142,13 @@ func (t *SchedTask) validate() error {
 	case t.Action == "shell":
 		t.Command = strings.TrimSpace(t.Command)
 		if t.Command == "" {
-			return fmt.Errorf("scheduler: %q: the shell command is empty", t.Name)
+			return fmt.Errorf("scheduler: %q: the script is empty", t.Name)
+		}
+		if _, _, err := schedSplit(t.Command); err != nil {
+			return fmt.Errorf("scheduler: %q: %v", t.Name, err)
 		}
 		if len(t.Command) > maxSchedCommand {
-			return fmt.Errorf("scheduler: %q: the command is longer than %d characters", t.Name, maxSchedCommand)
+			return fmt.Errorf("scheduler: %q: the script and its arguments are longer than %d characters", t.Name, maxSchedCommand)
 		}
 		if t.TimeoutSec == 0 {
 			t.TimeoutSec = 300
@@ -900,7 +903,11 @@ func (s *Scheduler) execute(t SchedTask, actor string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(t.TimeoutSec)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", t.Command)
+	script, args, err := schedScript(t.Command)
+	if err != nil {
+		return err.Error(), err
+	}
+	cmd := exec.CommandContext(ctx, script, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) } // the whole group, not only the shell
 	cmd.WaitDelay = 5 * time.Second
@@ -908,7 +915,7 @@ func (s *Scheduler) execute(t SchedTask, actor string) (string, error) {
 	lw := &limitWriter{w: &buf, n: 1 << 20}
 	cmd.Stdout, cmd.Stderr = lw, lw // one writer for both: they share one pipe, and the output stays in order
 	cmd.Env = schedEnv(os.Environ(), t.Name)
-	err := cmd.Run()
+	err = cmd.Run()
 	lw.mu.Lock()
 	out := buf.String()
 	lw.mu.Unlock()
@@ -920,6 +927,102 @@ func (s *Scheduler) execute(t SchedTask, actor string) (string, error) {
 		return strings.TrimRight(out, "\n") + fmt.Sprintf("\n(exit status %d, ignored)", ee.ExitCode()), nil
 	}
 	return out, err
+}
+
+// schedScriptDir is the folder a script task takes its script from.  It belongs to the administrator of the node: what the scheduler
+// runs is a file placed there on that node, so a person who can edit tasks in the web page (or any node that can send tasks) cannot make a node run a
+// command of their own.
+var schedScriptDir = "/etc/filedir/tasks"
+
+// schedSplit splits "script arg arg" into the script's name and its arguments.  Spaces and line breaks separate them; 'single quotes' keep
+// everything as it is and "double quotes" keep everything but \" and \\.  Nothing is expanded: there is no shell.
+func schedSplit(cmd string) (string, []string, error) {
+	var words []string
+	var cur strings.Builder
+	in, quote := false, rune(0)
+	esc := false
+	for _, r := range cmd {
+		switch {
+		case esc:
+			if r != '"' && r != '\\' {
+				cur.WriteRune('\\')
+			}
+			cur.WriteRune(r)
+			esc = false
+		case quote == '"' && r == '\\':
+			esc = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote, in = r, true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if in {
+				words = append(words, cur.String())
+				cur.Reset()
+				in = false
+			}
+		default:
+			cur.WriteRune(r)
+			in = true
+		}
+	}
+	if quote != 0 || esc {
+		return "", nil, errors.New("a quote is not closed")
+	}
+	if in {
+		words = append(words, cur.String())
+	}
+	if len(words) == 0 {
+		return "", nil, errors.New("the script is empty")
+	}
+	if !pathNameOK(words[0]) {
+		return "", nil, fmt.Errorf("%q is not a script name: it is the name of a file in %s, with no folder in it", words[0], schedScriptDir)
+	}
+	return words[0], words[1:], nil
+}
+
+// schedScript finds the script a task names in schedScriptDir, and refuses it unless the folder and the file are the administrator's: owned by root
+// or by the user this runs as, a regular file (not a link) that the owner may run, and not writable by anyone else.
+func schedScript(command string) (string, []string, error) {
+	name, args, err := schedSplit(command)
+	if err != nil {
+		return "", nil, err
+	}
+	me := uint32(os.Geteuid())
+	mine := func(st os.FileInfo) bool {
+		sys, ok := st.Sys().(*syscall.Stat_t)
+		return ok && (sys.Uid == 0 || sys.Uid == me)
+	}
+	dst, err := os.Stat(schedScriptDir)
+	if err != nil || !dst.IsDir() {
+		return "", nil, fmt.Errorf("the folder for scripts, %s, does not exist on this node", schedScriptDir)
+	}
+	if dst.Mode().Perm()&0o022 != 0 || !mine(dst) {
+		return "", nil, fmt.Errorf("%s must be owned by root (or the user this runs as) and not writable by anyone else", schedScriptDir)
+	}
+	ents, err := os.ReadDir(schedScriptDir)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, e := range ents {
+		if e.Name() != name { // the script is picked from what is in the folder, never built from the setting
+			continue
+		}
+		path := filepath.Join(schedScriptDir, e.Name())
+		st, err := os.Lstat(path)
+		if err != nil {
+			return "", nil, err
+		}
+		if !st.Mode().IsRegular() || st.Mode().Perm()&0o100 == 0 || st.Mode().Perm()&0o022 != 0 || !mine(st) {
+			return "", nil, fmt.Errorf("%s must be a plain file owned by root (or the user this runs as), runnable, and not writable by anyone else", path)
+		}
+		return path, args, nil
+	}
+	return "", nil, fmt.Errorf("there is no script %q in %s on this node", name, schedScriptDir)
 }
 
 type limitWriter struct {
