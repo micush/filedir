@@ -6354,7 +6354,7 @@
       try { await api("POST", "/api/schedule/" + path, body); if (done) done(); clear(status); await VIEWS.scheduler.poll(true); } catch (e) { fail(status)(e); }
     }
     const nodeName = (id) => { const n = state.nodes.find((x) => x.node_id === id); return n ? (nodeLabel(n)) : id.slice(0, 8); };
-    const actionLabel = (t, actions) => (t.action === "shell" ? "Script" : (actions || {})[t.action] || t.action);
+    const actionLabel = (t, actions) => (t.action === "shell" ? "Shell command" : (actions || {})[t.action] || t.action);
 
     function copyTask(t) {
       clip = JSON.parse(JSON.stringify(t));
@@ -6382,12 +6382,11 @@
       d.addEventListener("close", () => d.remove());
       const name = h("input", { type: "text", maxlength: "80", value: t.name || "", "aria-label": "Name", autocomplete: "off" });
       const acts = Object.entries(editorActions);
-      const action = h("select", { "aria-label": "Action" }, acts.map(([k, l]) => h("option", { value: k, selected: k === t.action }, l)), h("option", { value: "shell", selected: t.action === "shell" }, "Run a script"));
-      const cmd = h("textarea", { rows: "4", spellcheck: "false", maxlength: "4096", "aria-label": "Script and arguments", class: "mono" }); cmd.value = t.command || "";
+      const action = h("select", { "aria-label": "Action" }, acts.map(([k, l]) => h("option", { value: k, selected: k === t.action }, l)), h("option", { value: "shell", selected: t.action === "shell" }, "Run a shell command"));
+      const cmd = h("textarea", { rows: "4", spellcheck: "false", maxlength: "4096", "aria-label": "Command", class: "mono" }); cmd.value = t.command || "";
       const tmo = h("input", { type: "number", min: "1", max: "86400", value: String(t.timeout_sec || 300), "aria-label": "Time limit in seconds" });
       const ign = h("input", { type: "checkbox", checked: !!t.ignore_exit });
-      const shellBox = h("div", {}, h("label", { class: "f wide" }, "Script and arguments", cmd),
-        h("div", { class: "hint" }, "The name of a file in /etc/filedir/tasks/ on each node that runs it, then its arguments. There is no shell: nothing is expanded; put 'single' or \"double\" quotes around an argument with spaces. The folder and the file must belong to root and not be writable by anyone else."),
+      const shellBox = h("div", {}, h("label", { class: "f wide" }, "Command", cmd),
         h("label", { class: "f" }, "Stop it after (seconds)", tmo),
         h("label", { class: "f check" }, ign, "Ignore the exit status"));
       const allNodes = h("input", { type: "radio", name: "sched-where", checked: !(t.nodes || []).length });

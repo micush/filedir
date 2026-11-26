@@ -1,37 +1,78 @@
 # Changelog
 
-## [114]
+## [115] - 2026-11-25 — WebDAV at `/dav`, PAM service lookup, README
 
 ### Fixed
-- **WebDAV at `/dav` (no slash) works.** It was answered with a redirect to `/dav/`, which KDE Dolphin and some other clients do not follow for a listing, so `davs://host/dav` said the folder does not exist. It is now answered as `/dav/` is.
+
+- **WebDAV at `/dav` (no trailing slash) works.** It was answered with a redirect to `/dav/`, which KDE Dolphin and some other clients do not follow for a listing, so `davs://host/dav` said the folder does not exist. It is now answered as `/dav/` is.
+- The PAM service name is checked with `validPAMServiceName` and looked up in the listing of `/etc/pam.d` instead of being joined into a path (CodeQL #118, #107).
 - The README said the files site has no directory login. It does: a directory account in one of the groups signs in there too, nested groups included.
 
-## [113]
-
-### Changed
-- **Scheduler: a script task runs a script from a folder on the node, not a command typed in the page.** The "Run a shell command" task is now "Run a script". Its setting is the name of a file in `/etc/filedir/tasks/` on each node that runs it, then its arguments (`'single'` or `"double"` quotes for an argument with spaces). The file is run directly: there is no shell and nothing is expanded. Before, the command text was edited in the web page, copied to every node and run with `/bin/sh -c`, so anyone who could edit tasks could run any command as the service user on every node. Now a task can only run what an administrator has put on that node. The folder and the file must be owned by root (or the user filedir runs as), the file a plain file (not a link) that its owner can run, and neither writable by group or others; a name with a folder in it is refused when the task is saved. CodeQL's "Command built from user-controlled sources" alerts (#52, #53) pointed here.
-- **A task that holds an old inline command stops working until it is moved.** Put the command in a script in `/etc/filedir/tasks/` (for example `#!/bin/sh` and the old command line), make it `chmod 755` and owned by root, and set the task to the script's name. The run history shows "there is no script … in /etc/filedir/tasks on this node" until then.
-
-### Fixed
-- The PAM service name is looked up in the listing of `/etc/pam.d` instead of being joined into a path (alert #118, #107).
-
 ### Not changed
-- The sync folder's own paths (alerts in `filesync/index.go` and `folder.go`) are the folder an administrator chose to sync; opening files under it is the feature. Those are for dismissing as false positives.
-- Fetch from URL (alert #51) is as it was: the person types the address on purpose, and the node already refuses private, loopback and link-local addresses at connect time, after redirects too. Nothing short of removing the feature satisfies CodeQL there, so that alert is for dismissing as a false positive.
+
+- The scheduler's shell task is as it was (alerts #52, #53 are open); Fetch from URL (#51) already refuses private addresses at connect time and is for dismissing; the sync folder's own paths in `filesync/index.go` and `folder.go` are the folder the administrator chose.
 
 ### Verified
-- gofmt, `go vet`, the scheduler tests (a script run with arguments and no shell, the time limit, the ignored exit status, and every refusal: a name with a path, a missing script, a file or folder anyone can write to, a link, a file that cannot be run). The page's syntax was checked; it was not opened in a browser.
 
-## [112]
-
-### Changed
-- **A name from the settings is checked before it is put into a path.** The service name for sssd (`/etc/sssd/sssd.conf.<service>.bak` and `.tmp-<service>`), the PAM service name (`/etc/pam.d/<name>`) and the interface names for the kernel's ARP and reverse-path settings (`/proc/sys/net/ipv4/conf/<name>/…`) may now hold only letters, digits and `. _ : @ -` (at most 64, and not `.` or `..`). Anything else is refused or skipped, and said so in the log, so a setting can never reach outside the folder it is meant for. These are the places CodeQL's "uncontrolled data used in path expression" alerts pointed at; none was reachable from a request, so this is hardening and no behaviour changes for any name in use.
-
-### Verified
-- gofmt, `go vet`, the full test suite, a new test for the name check (`pathname_test.go`) and `GOOS=linux go build` for amd64, arm64, arm, 386 and riscv64. CodeQL 2.27.6 with the Code Scanning queries was run on filedir: it reports five findings (a TSIG key path in the DNS registration settings, the Fetch-from-URL request, two certificate-check switches), all by design. It did not reproduce the other alerts GitHub lists, so whether they close can only be seen after the next GitHub scan.
+- gofmt, `go vet`, the WebDAV tests (new: PROPFIND on `/dav` answers the listing, no redirect).
 
 ### Not verified
-- Not run against a live cluster.
+
+- Not tried in Dolphin itself; the full test suite was not run for this version.
+
+## [114] - 2026-11-24 — CodeQL "Uncontrolled data used in path expression", second batch
+
+### Fixed
+
+- `fixSSSD` refuses a PAM service name that is empty, over 64 bytes, starts with a dot, or has anything but letters, digits, `.`, `_` and `-` (`validPAMServiceName`). The name becomes part of the `sssd.conf.<service>.bak` and `sssd.conf.tmp-<service>` file names, so a name carrying a path could not stay beside `sssd.conf`. `filedir` and every name in `contrib/pam.d` are unaffected.
+- The interface-name check added in v113 (`confSysctlPath`) is what the netutil.go `setSysctl` and realmac.go `rememberSysctl` alerts (#70, #71) refer to: every path reaching them is built through it.
+
+### Not changed
+
+- syslog.go (the TLS CA file), dnsreg.go (TSIG key file), filesync dav.go (store directory): paths the administrator sets on purpose; narrowing them would change what the settings accept. To be dismissed as false positives.
+
+### Verified
+
+- `gofmt -l .` clean, `go vet ./...`, `go test -race -count=1 ./...`, new `TestValidPAMServiceName`; `CGO_ENABLED=0` vet and tests; cross-compiled for linux/amd64, arm64, arm, 386, riscv64 (cross-compiles use the fail-closed PAM stub; only amd64 is verified with PAM).
+
+### Not verified
+
+- CodeQL was not re-run; `fixSSSD` was not run against a real sssd.
+
+## [113] - 2026-11-24 — CodeQL "Uncontrolled data used in path expression"
+
+### Fixed
+
+- Per-interface kernel settings (`rp_filter`, `arp_ignore`, `arp_announce` under `/proc/sys/net/ipv4/conf/`) are built by `confSysctlPath`, which refuses an interface name that is empty, longer than 15 bytes, `.`/`..`, or contains a slash, NUL or blank. A bad name is reported as a failed setting instead of reaching the filesystem. Real names (`eth0`, `all`, `fd137.1`) give the same paths as before. Covers netutil.go `ensureSysctl`/`relaxReversePath` and the two loops in engine.go.
+
+### Not changed
+
+- dnsreg.go (TSIG key file), filesync dav.go / index.go (store directory) and migrate.go: the paths are the administrator's own configuration (a key file, the folder being synced) or already checked with `filepath.IsLocal` (migrate.go, names from the index). Narrowing them would change what the settings accept, so those alerts are to be dismissed as false positives.
+
+### Verified
+
+- `gofmt -l .` clean, `go vet ./...`, `go test -race -count=1 ./...`, new `TestConfSysctlPathRejectsTraversal`; `CGO_ENABLED=0` vet and tests; cross-compiled for linux/amd64, arm64, arm, 386, riscv64 (cross-compiles use the fail-closed PAM stub; only amd64 is verified with PAM).
+
+### Not verified
+
+- CodeQL was not re-run. No live daemon run was made; the ARP sysctl path was only exercised by unit tests.
+
+## [112] - 2026-11-24 — CodeQL "Size computation for allocation may overflow" in netutil.go
+
+### Fixed
+
+- `icmp6Checksum` refuses a body longer than 65535 bytes (the IPv6 payload-length limit) before sizing its buffer, so `40+len(body)+1` cannot overflow. No caller comes near the limit; behaviour for real packets is unchanged.
+- `buildNA` sizes its frame from the constant length of a Neighbor Advertisement (`naBodyLen`) instead of `14+40+len(body)`. The frame is byte-for-byte the same.
+
+### Verified
+
+- `gofmt -l .` clean, `go build`, `go vet ./...`, `go test -race -count=1 ./...` (all packages pass).
+- `CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go test ./...` pass.
+- Cross-compiled for linux/amd64, arm64, arm, 386, riscv64.
+
+### Not verified
+
+- The CodeQL alerts were not re-run here; they should close on the next scan. No GUI, wire-format, cluster or live-daemon paths were touched, so no live run was made. Cross-compiles use the fail-closed PAM stub; only the native amd64 build is verified with PAM.
 
 ## [111]
 

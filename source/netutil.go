@@ -249,6 +249,15 @@ func vipAddr(vip string) (netip.Addr, error) {
 // procIPv4Conf is where the per-interface IPv4 settings live (replaceable in tests).
 var procIPv4Conf = "/proc/sys/net/ipv4/conf/"
 
+// confSysctlPath builds root+dev+"/"+file for an interface's kernel setting; false when dev is not a plausible
+// interface name (empty, over 15 bytes, or containing a slash, NUL or blank, which would let it leave the directory).
+func confSysctlPath(root, dev, file string) (string, bool) {
+	if dev == "" || len(dev) > 15 || dev == "." || dev == ".." || strings.ContainsAny(dev, "/\x00 \t\r\n") {
+		return "", false
+	}
+	return root + dev + "/" + file, true
+}
+
 // ensureSysctl sets a kernel setting and reads it back; false means it did not take (a container that may not write
 // sysctls, say), which the caller reports.
 func ensureSysctl(path, val string) bool {
@@ -264,11 +273,11 @@ func ensureSysctl(path, val string) bool {
 // It returns what it changed ("all", "eth0", …) and what it could not.
 func relaxReversePath(dev, parent string) (changed, failed []string) {
 	for _, name := range []string{dev, parent, "all"} {
-		if !pathNameOK(name) {
+		path, ok := confSysctlPath(procIPv4Conf, name, "rp_filter")
+		if !ok {
 			failed = append(failed, name)
 			continue
 		}
-		path := procIPv4Conf + name + "/rp_filter"
 		b, err := os.ReadFile(path)
 		if err != nil || strings.TrimSpace(string(b)) != "1" {
 			continue
@@ -441,8 +450,18 @@ func sendGratuitousARPMAC(iface string, mac [6]byte, vip4 string) {
 	}
 }
 
+// maxICMP6Body is the largest ICMPv6 message an IPv6 packet can carry (the 16-bit payload length field).
+const maxICMP6Body = 0xFFFF
+
+// naBodyLen is the length of a Neighbor Advertisement built by buildNA: 8-byte header, 16-byte target, 8-byte option.
+const naBodyLen = 8 + 16 + 2 + 6
+
 // icmp6Checksum computes the ICMPv6 checksum over the pseudo header + body.
 func icmp6Checksum(src, dst [16]byte, body []byte) uint16 {
+	// An IPv6 payload is at most 65535 bytes; bounding it here keeps the size computation below from overflowing.
+	if len(body) > maxICMP6Body {
+		return 0
+	}
 	raw := make([]byte, 0, 40+len(body)+1)
 	raw = append(raw, src[:]...)
 	raw = append(raw, dst[:]...)
@@ -475,7 +494,7 @@ func buildNA(ethDst, ethSrc, vmac [6]byte, target, dst [16]byte, naFlags uint32)
 	ck := icmp6Checksum(target, dst, body)
 	body[2], body[3] = byte(ck>>8), byte(ck)
 
-	frame := make([]byte, 0, 14+40+len(body))
+	frame := make([]byte, 0, 14+40+naBodyLen)
 	frame = append(frame, ethDst[:]...)
 	frame = append(frame, ethSrc[:]...)
 	frame = append(frame, 0x86, 0xdd)
@@ -534,19 +553,4 @@ func buildNSFor(senderMAC [6]byte, src, target [16]byte) []byte {
 	f = append(f, src[:]...)
 	f = append(f, dst[:]...)
 	return append(f, body...)
-}
-
-// pathNameOK says whether s is fit to be one part of a path under a system folder (an interface name, a service name): letters, digits
-// and . _ : @ - only, at most 64 of them, and not "." or "..".  A name that comes from the configuration is checked with this before it is
-// put into a path, so a setting can never reach outside the folder it is meant for.
-func pathNameOK(s string) bool {
-	if s == "" || len(s) > 64 || s == "." || s == ".." {
-		return false
-	}
-	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == ':' || c == '@' || c == '-') {
-			return false
-		}
-	}
-	return true
 }
