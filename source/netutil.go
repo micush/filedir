@@ -249,6 +249,20 @@ func vipAddr(vip string) (netip.Addr, error) {
 // procIPv4Conf is where the per-interface IPv4 settings live (replaceable in tests).
 var procIPv4Conf = "/proc/sys/net/ipv4/conf/"
 
+// pathNameOK reports whether s is safe as one element of a path: 1 to 64 ASCII letters, digits, '.', '-', '_' or ':',
+// and not "." or "..", so it cannot climb out of the directory it is joined to.
+func pathNameOK(s string) bool {
+	if s == "" || len(s) > 64 || s == "." || s == ".." {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' || r == ':') {
+			return false
+		}
+	}
+	return true
+}
+
 // confSysctlPath builds root+dev+"/"+file for an interface's kernel setting; false when dev is not a plausible
 // interface name (empty, over 15 bytes, or containing a slash, NUL or blank, which would let it leave the directory).
 func confSysctlPath(root, dev, file string) (string, bool) {
